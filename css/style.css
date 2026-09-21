@@ -1,0 +1,2003 @@
+/* ==========================================================================
+   デザイントークン
+   ========================================================================== */
+:root {
+  --color-primary: #1b7a3d;
+  --color-primary-dark: #145c2e;
+  --color-primary-light: #e6f4ea;
+  --color-danger: #c62828;
+  --color-danger-light: #fdecea;
+  --color-text: #1f2328;
+  --color-text-muted: #5b6270; /* 補足の文字。白・淡い緑の地の上で、4.5:1 以上（v1.49.9で、#6b7280 から濃くした） */
+  --color-border: #e1e4e8;
+  --color-border-strong: #c9ccd1;
+  --color-control-border: #868d97; /* 入力欄・選択欄・スイッチなど、操作する部品の縁。地の色に対して 3:1 以上 */
+  --color-bg: #f6f7f8;
+  --color-surface: #ffffff;
+  --color-surface-hover: #f0f2f4;
+  --color-accent-selected: #dcedc8;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  --space-1: 4.4px;
+  --space-2: 8.8px;
+  --space-3: 13.2px;
+  --space-4: 17.6px;
+  --space-5: 26.4px;
+
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 4px 12px rgba(16, 24, 40, 0.12);
+  --shadow-lg: 0 8px 28px rgba(16, 24, 40, 0.18);
+
+  --font-sans: "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+
+  --topbar-height: 61.6px;
+  --sidebar-width: 374px;
+
+  --transition-fast: 120ms ease;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: 14.3px;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select {
+  font-family: inherit;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh; /* スマホのブラウザは、アドレスバーの出し入れで画面の高さが変わる。今の高さに合わせる */
+  width: 100%;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   トップバー
+   ========================================================================== */
+#topbar {
+  height: var(--topbar-height);
+  flex: 0 0 var(--topbar-height);
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+  z-index: 20;
+}
+
+.topbar-group { display: flex; align-items: center; gap: var(--space-2); }
+
+.topbar-brand { flex: 0 0 auto; }
+.brand-mark {
+  width: 24.2px;
+  height: 24.2px;
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 45%, rgba(255,255,255,0.9) 45%, rgba(255,255,255,0.9) 55%, transparent 55%),
+    var(--color-primary);
+  flex: none;
+}
+/* バージョンのバッジ（ツール名の横。クリックでリリースノート） */
+.brand-version {
+  flex: none;
+  margin-left: var(--space-2);
+  padding: 1px 9px;
+  border: 1px solid #e0b060;
+  border-radius: 999px;
+  background: #fff4dc;
+  color: #8a5300;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.6;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.brand-version:hover { background: #ffe9bd; }
+.brand-text { font-weight: 700; font-size: 15.4px; letter-spacing: 0.01em; white-space: nowrap; }
+
+.topbar-mapname { flex: 1 1 auto; min-width: 0; justify-content: center; }
+.map-name-input {
+  width: min(396px, 90%);
+  text-align: center;
+  padding: 6.6px 11px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 14.3px;
+  font-weight: 600;
+  background: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+/* 未保存の変更があるときの表示（地図名称の横） */
+.unsaved-badge {
+  flex: none;
+  margin-left: var(--space-2);
+  padding: 2px 9px;
+  border: 1px solid #e0b060;
+  border-radius: 999px;
+  background: #fff4dc;
+  color: #8a5300;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+.map-name-input:hover { background: var(--color-surface-hover); }
+.map-name-input:focus {
+  outline: none;
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+}
+
+.topbar-actions { flex: 0 0 auto; position: relative; }
+
+/* ==========================================================================
+   ボタン共通
+   ========================================================================== */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6.6px;
+  cursor: pointer;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  padding: 7.7px 13.2px;
+  font-size: 13.8px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+.btn:hover { background: var(--color-surface-hover); border-color: #9aa0a6; }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+.btn:disabled:hover { background: var(--color-surface); border-color: var(--color-border-strong); }
+
+/* キーボード操作時のフォーカス表示（マウス操作では出さない） */
+.btn:focus-visible, .icon-btn:focus-visible, .mode-tab:focus-visible,
+.preset-btn:focus-visible, .segmented button:focus-visible, .accordion summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.btn.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.btn.primary:hover { background: var(--color-primary-dark); }
+
+.btn.ghost {
+  background: var(--color-surface);
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.btn.ghost:hover { background: var(--color-primary-light); border-color: var(--color-primary); color: var(--color-primary-dark); }
+.btn.ghost:disabled:hover { background: var(--color-surface); border-color: var(--color-border-strong); color: var(--color-text); }
+
+.btn.danger {
+  background: var(--color-danger);
+  border-color: var(--color-danger);
+  color: #fff;
+}
+.btn.danger:hover { background: #8e0000; }
+
+
+.btn.danger-outline {
+  color: var(--color-danger);
+  background: var(--color-surface);
+  border-color: #e3a6a6;
+}
+.btn.danger-outline:hover { background: var(--color-danger-light); border-color: var(--color-danger); }
+
+.btn.small { padding: 5.5px 11px; font-size: 13.2px; }
+.btn.full { width: 100%; justify-content: center; }
+
+.topbar-divider { width: 1px; height: 24.2px; background: var(--color-border); margin: 0 var(--space-1); }
+
+.icon-btn {
+  cursor: pointer;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  min-width: 30.8px;
+  height: 30.8px;
+  padding: 0 8.8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13.2px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-text);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.icon-btn:hover { background: var(--color-surface-hover); border-color: #9aa0a6; }
+.icon-btn.danger { color: var(--color-danger); border-color: #e3a6a6; }
+.icon-btn.danger:hover { background: var(--color-danger-light); border-color: var(--color-danger); }
+
+.btn-row { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-bottom: var(--space-2); }
+
+.file-btn { cursor: pointer; }
+
+/* ==========================================================================
+   ドロップダウン／ポップオーバー
+   ========================================================================== */
+.dropdown { position: relative; display: inline-flex; }
+
+.popover {
+  position: absolute;
+  top: calc(100% + 6.6px);
+  left: 0;
+  min-width: 286px;
+  max-width: 352px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+  z-index: 30;
+}
+.popover-title {
+  font-size: 12.1px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4.4px 6.6px 8.8px;
+}
+.popover .btn.full { margin-bottom: var(--space-1); }
+
+/* ==========================================================================
+   モード切替タブ
+   ========================================================================== */
+.mode-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 var(--space-3);
+  gap: 4.4px;
+}
+.mode-tab {
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  padding: 9.9px 15.4px;
+  font-size: 13.8px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.mode-tab:hover { color: var(--color-text); }
+.mode-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
+/* ==========================================================================
+   レイアウト（サイドバー / 地図）
+   ========================================================================== */
+#body-layout {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+#sidebar {
+  order: 2; /* サイドバーは地図の右側に置く（狭い幅で縦積みにするときは上に戻す） */
+  width: var(--sidebar-width);
+  flex: 0 0 var(--sidebar-width);
+  overflow-y: auto;
+  background: var(--color-bg);
+  border-left: 1px solid var(--color-border);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* サイドバーのタブ（横向きの下線タブ）。一度に、選んだタブの内容だけを表示する */
+.sidebar-head {
+  position: sticky;
+  top: calc(-1 * var(--space-3));
+  z-index: 7;
+  margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) 0;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+.sidebar-tabs {
+  display: flex;
+  padding: 0 var(--space-2);
+  overflow-x: auto;
+}
+.sidebar-tab {
+  flex: 1 1 auto;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  padding: 10px 8px 8px;
+  font-size: 13.2px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.sidebar-tab:hover { color: var(--color-text); }
+.sidebar-tab.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+.sidebar-tab:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+.sidebar-summary {
+  padding: 6px var(--space-3);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-primary-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tab-pane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tab-section + .tab-section { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.section-title {
+  margin: 0 0 var(--space-2);
+  font-size: 13.2px;
+  font-weight: 700;
+}
+
+.panel {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.panel-header h2 {
+  font-size: 13.8px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+
+.route-name-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 5.5px 7.7px;
+  font-size: 14.9px;
+  font-weight: 700;
+  background: transparent;
+}
+.route-name-input:hover { background: var(--color-surface-hover); }
+.route-name-input:focus {
+  outline: none;
+  background: var(--color-bg);
+  border-color: var(--color-border-strong);
+}
+
+.row-actions { display: flex; gap: var(--space-1); flex: none; }
+
+#map-area {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  display: flex;
+}
+
+#map {
+  flex: 1;
+  height: 100%;
+  position: relative;
+  /* Leafletのペイン・コントロール（z-index最大1000）を地図内に閉じ込め、
+     トップバーのポップオーバー（開く・保存）が地図の下に隠れないようにする */
+  z-index: 0;
+}
+
+/* 路線図は横に広がる（分岐の列の分だけ）。地図エリア・図の領域が図の幅に合わせて広がると、
+   サイドバーが画面の外へ押し出されるので、min-width: 0 で縮められるようにする（図は領域の中で横にスクロールする） */
+#map-area,
+#diagram-area {
+  min-width: 0;
+}
+#diagram-area {
+  flex: 1;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--color-surface);
+  position: relative;
+}
+
+.map-hint {
+  position: absolute;
+  top: var(--space-3);
+  /* 中央に置く。左のズームボタン・右の地図切替ボタンに重ならないよう、両端に約64pxずつ空け、
+     入りきらないときは折り返す（幅が狭い画面で、文がボタンに重なっていた） */
+  left: 0;
+  right: 0;
+  width: max-content;
+  max-width: calc(100% - 128px);
+  margin: 0 auto;
+  z-index: 500;
+  background: rgba(31, 35, 40, 0.85);
+  color: #fff;
+  padding: 7.7px 17.6px;
+  border-radius: 18px;
+  font-size: 13.8px;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: balance; /* 折り返すときは、行の長さをそろえる（文の途中で1〜2文字だけ残さない） */
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+/* ==========================================================================
+   空状態
+   ========================================================================== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-3);
+  color: var(--color-text-muted);
+}
+.empty-state p { margin: 0; font-size: 13.8px; line-height: 1.5; }
+
+.muted { color: var(--color-text-muted); font-size: 12.7px; }
+.hint-text {
+  font-size: 13.2px;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
+  padding: 6.6px 8.8px;
+  margin: 0 0 var(--space-2);
+}
+
+/* ==========================================================================
+   フォーム部品
+   ========================================================================== */
+.field { margin-bottom: var(--space-3); display: flex; flex-direction: column; gap: 5.5px; }
+.field:last-child { margin-bottom: 0; }
+
+.field label {
+  font-size: 12.1px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.field input[type="text"],
+.field select {
+  padding: 6.6px 8.8px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  font-size: 13.8px;
+  background: var(--color-surface);
+}
+.field input[type="text"]:focus,
+.field select:focus {
+  outline: 2px solid var(--color-primary-light);
+  border-color: var(--color-primary);
+}
+
+.field-row { display: flex; gap: var(--space-3); }
+.field-row .field { flex: 1; min-width: 0; }
+
+input[type="color"] {
+  width: 100%;
+  height: 33px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  background: var(--color-surface);
+}
+
+input[type="range"] { width: 100%; accent-color: var(--color-primary); }
+
+/* ==========================================================================
+   リスト（路線一覧・IC一覧・保存済み地図）
+   ========================================================================== */
+.route-list, .list-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 264px;
+  overflow-y: auto;
+}
+
+.list-item, .route-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: 7.7px 8.8px;
+  border-radius: var(--radius-sm);
+  font-size: 13.8px;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.list-item:hover, .route-item:hover { background: var(--color-surface-hover); }
+.list-item.active, .route-item.active { background: var(--color-accent-selected); font-weight: 600; }
+
+.route-item .swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.list-item .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 路線一覧の名前は、2行まで折り返して表示する（長い名前が「…」で切れて見分けにくくならないように） */
+.route-item .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+
+
+.empty-msg { color: var(--color-text-muted); font-size: 13.2px; padding: 6.6px 4.4px; }
+
+/* ==========================================================================
+   種別プリセット（グリッド）
+   ========================================================================== */
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6.6px;
+}
+
+.preset-btn {
+  display: flex;
+  align-items: center;
+  gap: 6.6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 7.7px 8.8px;
+  font-size: 12.7px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.preset-btn:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
+.preset-btn.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary-light);
+  font-weight: 600;
+}
+
+.swatch-line { width: 22px; height: 4.4px; flex: none; border-radius: 2px; }
+
+/* ==========================================================================
+   セグメントコントロール（状態・車線数）
+   ========================================================================== */
+.segmented {
+  display: flex;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+.segmented button {
+  flex: 1;
+  background: var(--color-surface);
+  border: none;
+  border-right: 1px solid var(--color-control-border);
+  padding: 7.7px 4.4px;
+  font-size: 12.7px;
+  cursor: pointer;
+  color: var(--color-text);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.segmented button:last-child { border-right: none; }
+.segmented button:hover { background: var(--color-surface-hover); }
+.segmented button:disabled { color: var(--color-text-muted); cursor: not-allowed; background: var(--color-bg); }
+.segmented button:disabled:hover { background: var(--color-bg); }
+
+.route-tag {
+  flex: none;
+  padding: 1px 7.7px;
+  border-radius: 999px;
+  background: #fff3c4;
+  border: 1px solid #e0b800;
+  color: #6b5200;
+  font-size: 12.1px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.segmented button.active {
+  background: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.lane-segment-form {
+  margin-top: 8.8px;
+  padding-top: 8.8px;
+  border-top: 1px dashed var(--color-border);
+}
+.lane-segment-form .segmented { margin-bottom: 8.8px; }
+.lane-segment-form .btn.small { flex: 1; }
+
+/* ==========================================================================
+   アコーディオン（<details>/<summary>）
+   ========================================================================== */
+.accordion {
+  border-top: 1px solid var(--color-border);
+  padding-top: var(--space-3);
+  margin-top: var(--space-3);
+}
+.accordion:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+
+.accordion summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  cursor: pointer;
+  font-size: 13.2px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  list-style: none;
+  user-select: none;
+}
+.accordion summary::-webkit-details-marker { display: none; }
+.accordion summary::after {
+  content: "";
+  width: 7.7px;
+  height: 7.7px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--transition-fast);
+  margin: 0 4.4px 0 auto;
+  flex: none;
+}
+.accordion[open] > summary::after { transform: rotate(45deg); }
+.accordion summary .icon-btn { text-transform: none; margin-left: -4.4px; }
+
+.accordion-body { padding-top: var(--space-3); }
+
+/* ==========================================================================
+   路線図（模式図）
+   ========================================================================== */
+/* 路線図: 開いている全路線を、独立した図（.diagram-group）として横に並べる。分岐している路線は、その図の中に列として並ぶ */
+#route-diagram {
+  display: flex;
+  align-items: flex-start;
+  gap: 48px;
+  width: max-content;
+  min-width: 528px;
+  margin: 0;
+  padding: var(--space-5) var(--space-4) var(--space-5) 0;
+  /* 拡大・縮小は transform で行う（大きさは、外側の .route-diagram-wrap に、倍率をかけた値を指定する） */
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.route-diagram-wrap {
+  position: relative;
+  overflow: hidden;
+  margin: 0 auto; /* 図が領域より小さいときは、中央に置く */
+}
+/* 路線図は、ドラッグで動かし、Ctrl+ホイール・ピンチ・ボタンで拡大・縮小する（指の操作は、ブラウザ任せにせず、自分で扱う） */
+#diagram-area { touch-action: none; cursor: grab; }
+#diagram-area.panning { cursor: grabbing; user-select: none; }
+#diagram-area .diagram-select, #diagram-area button { cursor: pointer; }
+.diagram-zoom-anchor {
+  position: sticky;
+  left: 0;
+  top: 0;
+  height: 0;
+  z-index: 5;
+}
+.diagram-zoom {
+  position: absolute;
+  top: 10px;
+  right: 22px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.diagram-zoom .btn { min-width: 52px; justify-content: center; }
+.diagram-zoom #btn-diagram-orient { min-width: 96px; }
+
+/* ===== 横向き（始点が左・終点が右）。分岐する路線は、下の行に並ぶ ===== */
+#route-diagram.orient-h { flex-direction: column; align-items: flex-start; }
+.diagram-group.h { padding-bottom: var(--space-4); }
+.diagram-hbody { position: relative; margin-left: 74px; margin-top: 8px; }
+.diagram-row { position: absolute; isolation: isolate; scroll-margin: 12px 12px 12px 80px; }
+.diagram-row .diagram-branch-head { left: 32px; right: auto; width: 440px; }
+.diagram-node.h { right: auto; top: 0; width: 0; }
+.diagram-node.h .diagram-node-number { left: -14.3px; top: calc(var(--row-head, 0px) + 4px); }
+.diagram-node.h .diagram-node-marker { left: -7.7px; top: calc(var(--row-head, 0px) + 52px - 7.7px); }
+.diagram-node.h .diagram-node-info {
+  position: absolute;
+  left: -66px;
+  top: calc(var(--row-head, 0px) + 72px);
+  width: 132px;
+  margin: 0;
+  padding: 0;
+  text-align: center;
+}
+.diagram-line-seg.h.status-construction {
+  background: repeating-linear-gradient(to right, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
+}
+.diagram-line-seg.h.status-planned {
+  background: repeating-linear-gradient(to right, var(--diagram-color, var(--color-primary)) 0 4px, transparent 4px 11px);
+}
+.diagram-endpoint.h { position: absolute; margin: 0; padding: 0; height: 22px; white-space: nowrap; }
+.diagram-group { flex: none; padding-bottom: var(--space-3); border-radius: var(--radius-md); }
+.diagram-group { padding-left: 12px; }
+/* 図が複数あるときだけ、選択中の路線を含む図を色づける（1つのときは全体が色づいて意味がないため） */
+#route-diagram.multi-groups .diagram-group.selected { background: var(--color-primary-light); box-shadow: 0 0 0 10px var(--color-primary-light); }
+.diagram-select { cursor: pointer; }
+.diagram-select:hover { text-decoration: underline; }
+/* 選択中の路線（図の見出し。分岐する路線は、下の列全体を色づける） */
+.route-diagram-title.selected-route { background: var(--color-accent-selected); border-radius: var(--radius-sm); padding-top: 3px; padding-bottom: 3px; margin-right: 12px; }
+.diagram-group { scroll-margin: 12px 12px 12px 0; }
+.route-diagram-title {
+  font-size: 16.5px;
+  font-weight: 700;
+  text-align: left;
+  padding-left: 12px;
+  margin-bottom: var(--space-2);
+}
+.route-diagram-meta {
+  text-align: left;
+  padding-left: 12px;
+  font-size: 12.7px;
+  color: var(--color-text-muted);
+  margin-bottom: var(--space-5);
+}
+
+.diagram-endpoint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: 61.6px;
+  padding-left: 24.2px;
+  font-size: 13.2px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.diagram-endpoint .diagram-dot {
+  width: 13.2px;
+  height: 13.2px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  flex: none;
+}
+
+.diagram-track {
+  position: relative;
+  margin-left: 61.6px;
+}
+/* 路線の線は、状態・車線数・暫定が同じ区間ごとの線（.diagram-line-seg）を並べて描く。
+   事業中・計画中の区間は、地図と同じように、破線・点線で表す */
+.diagram-line-seg {
+  position: absolute; /* 左右の位置と太さは、車線数に応じて、各要素の style で指定する */
+  background: var(--diagram-color, var(--color-primary));
+}
+/* 車線の区分線と、暫定の枠（道路の要素の中に、位置と色を style で指定して置く） */
+.diagram-lane-line { position: absolute; display: block; pointer-events: none; }
+.diagram-line-seg.status-construction {
+  background: repeating-linear-gradient(to bottom, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
+}
+.diagram-line-seg.status-planned {
+  background: repeating-linear-gradient(to bottom, var(--diagram-color, var(--color-primary)) 0 4px, transparent 4px 11px);
+}
+/* 状態のバッジ（事業中・計画中） */
+.diagram-status {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 0 8px;
+  border: 1px solid #e0b060;
+  border-radius: 999px;
+  background: #fff4dc;
+  color: #8a5300;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: 1px;
+}
+.diagram-status.planned { border-color: #b0b5bc; background: #eef0f3; color: #4b5563; }
+.diagram-gap-lanes { font-weight: 700; color: var(--color-text); }
+/* 分岐する路線を、本線の横に並べる（本線のJCTから横線を出し、その先に縦の線と施設を並べる） */
+.diagram-connector-svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible; /* 線は、図の座標で描く（本線からなめらかに離れ、分岐する路線の線につながる。diagramConnectorSvg()） */
+  pointer-events: none;
+  z-index: 0;
+}
+.diagram-track.diagram-branch-col {
+  position: absolute;
+  margin-left: 0;
+  width: 380px;
+  isolation: isolate;
+  scroll-margin: 12px 12px 12px 80px; /* スクロールして寄せたとき、左の施設番号の丸が見える余白 */
+}
+/* 選択中の路線（分岐する路線）の背景。図の座標で置き、分岐の線・路線の線より下の層にする（分岐元の線が、分岐の線の上に来る） */
+.diagram-hl {
+  position: absolute;
+  z-index: 0;
+  border-radius: var(--radius-md);
+  background: var(--color-accent-selected);
+  pointer-events: none;
+}
+.diagram-branch-head {
+  position: absolute;
+  left: 79px;
+  top: 0;
+  right: 0;
+  font-size: 13.2px;
+  line-height: 1.4;
+}
+.diagram-branch-head .diagram-branch-link { font-size: 13.2px; }
+.diagram-branch-head .muted { font-size: 12.1px; }
+.diagram-node-branch { font-size: 12.1px; font-weight: 600; color: var(--color-text); }
+.diagram-branch-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.diagram-branch-link:hover { color: var(--color-primary); }
+
+.diagram-node {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+.diagram-node-number {
+  position: absolute;
+  left: -61.6px;
+  top: 0;
+  width: 28.6px;
+  height: 28.6px;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 2px solid var(--diagram-color, var(--color-primary));
+  color: var(--color-text); /* 文字は濃い色（路線の色が淡いと、読めないため）。縁だけ路線の色 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12.1px;
+  font-weight: 700;
+  z-index: 1;
+}
+.diagram-node-number.len3 { font-size: 10.5px; letter-spacing: -0.03em; }
+.diagram-node-number.len5 { font-size: 8.8px; letter-spacing: -0.05em; }
+.diagram-node-marker {
+  position: absolute;
+  left: 24.2px;
+  top: 6.6px;
+  width: 15.4px;
+  height: 15.4px;
+  background: #fff;
+  border: 2.5px solid #333; /* 施設のマークの色は、地図の施設点（.ic-shape）と同じ（路線の色にしない） */
+  z-index: 1;
+}
+.diagram-node-marker.shape-circle { border-radius: 50%; }
+.diagram-node-marker.shape-diamond { transform: rotate(45deg); }
+.diagram-node-marker.shape-pentagon {
+  border: none;
+  background: #333;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+.diagram-node-info {
+  margin-left: 55px;
+  padding-left: 24.2px;
+  font-size: 13.2px;
+  line-height: 1.4;
+}
+/* 施設どうしの間の距離（IC間距離）。線の上に、白地の小さなラベルで重ねる */
+.diagram-gap {
+  position: absolute;
+  left: 33px;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  padding: 1px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.diagram-node-name { font-weight: 700; }
+.diagram-node-sub { color: var(--color-text-muted); font-size: 12.1px; }
+
+/* ==========================================================================
+   トースト
+   ========================================================================== */
+#toast-container {
+  position: fixed;
+  bottom: var(--space-4);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  z-index: 1000;
+  align-items: center;
+}
+
+.toast {
+  background: rgba(31, 35, 40, 0.92);
+  color: #fff;
+  padding: 9.9px 19.8px;
+  border-radius: 999px;
+  font-size: 13.8px;
+  box-shadow: var(--shadow-md);
+  animation: toast-in 160ms ease-out;
+}
+.toast.error { background: rgba(198, 40, 40, 0.95); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ==========================================================================
+   確認モーダル
+   ========================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.modal {
+  background: var(--color-surface);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-5);
+  width: min(396px, 90vw);
+}
+.modal p { margin: 0 0 var(--space-4); font-size: 14.9px; line-height: 1.6; }
+.modal-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+
+/* ==========================================================================
+   マニュアルモーダル
+   ========================================================================== */
+.modal-large {
+  width: min(968px, 94vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5) var(--space-2);
+  flex: none;
+}
+.modal-header h2 { margin: 0; font-size: 16.5px; }
+
+
+.modal-body {
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  flex: 1 1 auto;
+  scroll-behavior: smooth;
+}
+
+.manual-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6.6px;
+  /* スクロールしても目次を見失わないよう、上部に固定する */
+  position: sticky;
+  top: calc(-1 * var(--space-4));
+  z-index: 3;
+  margin: calc(-1 * var(--space-4)) calc(-1 * var(--space-5)) var(--space-4);
+  padding: var(--space-3) var(--space-5);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  /* 上側の余白部分に、スクロールする本文が透けて見えないよう白で塗りつぶす */
+  box-shadow: 0 -24px 0 0 var(--color-surface), 0 2px 6px rgba(16, 24, 40, 0.06);
+}
+.manual-nav a {
+  font-size: 13.2px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 4.4px 12.1px;
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.manual-nav a:hover { background: var(--color-primary-light); color: var(--color-primary); }
+.manual-nav a.current {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+/* 見出しに通し番号を付ける */
+.manual-panel { counter-reset: manual-section; max-width: 836px; margin: 0 auto; }
+.manual-panel h3 {
+  counter-increment: manual-section;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  font-size: 17.6px;
+  margin: 35.2px 0 13.2px;
+  padding-bottom: 8.8px;
+  border-bottom: 2px solid var(--color-primary-light);
+  scroll-margin-top: 70.4px;
+}
+.manual-panel h3::before {
+  content: counter(manual-section);
+  flex: none;
+  width: 26.4px;
+  height: 26.4px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 13.8px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.manual-panel p { font-size: 14.9px; line-height: 1.85; margin: 0 0 var(--space-3); }
+.manual-panel ul, .manual-panel ol {
+  font-size: 14.9px;
+  line-height: 1.85;
+  margin: 0 0 var(--space-3);
+  padding-left: 0;
+  list-style: none;
+}
+.manual-panel li { position: relative; margin-bottom: 6.6px; padding-left: 22px; }
+.manual-panel ul > li::before {
+  content: "";
+  position: absolute;
+  left: 6.6px;
+  top: 0.85em;
+  width: 6.6px;
+  height: 6.6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+.manual-panel ol { counter-reset: manual-step; }
+.manual-panel ol > li { counter-increment: manual-step; padding-left: 33px; }
+.manual-panel ol > li::before {
+  content: counter(manual-step);
+  position: absolute;
+  left: 0;
+  top: 0.3em;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-primary);
+  color: var(--color-primary);
+  font-size: 12.7px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+}
+.manual-panel li ul { margin: 4.4px 0 0; }
+.manual-panel li > b:first-child { color: var(--color-primary-dark); }
+.manual-panel a { color: var(--color-primary); }
+
+/* 強調したい補足（囲み） */
+/* マニュアルの「ライセンス」節の、ライセンス全文（折りたたみ） */
+.manual-license-full { margin: var(--space-2) 0 var(--space-3); }
+.manual-license-full > summary { cursor: pointer; font-weight: 600; color: var(--color-primary-dark); }
+.manual-license-text {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.manual-note {
+  margin: 0 0 var(--space-3);
+  padding: 11px 15.4px;
+  background: #fff8e1;
+  border-left: 4px solid #f9a825;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: 14.3px;
+  line-height: 1.75;
+}
+
+/* はじめの3ステップ */
+.manual-quick {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+.manual-quick-step {
+  padding: 13.2px 15.4px;
+  background: var(--color-primary-light);
+  border-radius: var(--radius-md);
+  font-size: 14.3px;
+  line-height: 1.6;
+}
+.manual-quick-step b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-primary-dark);
+  font-size: 13.2px;
+}
+.manual-quick-step .num {
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  margin-right: 6.6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12.7px;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* リリースノート */
+.version-badge {
+  display: inline-block;
+  font-size: 12.1px;
+  font-weight: 600;
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+  border-radius: 999px;
+  padding: 2px 9.9px;
+  vertical-align: middle;
+}
+.version-badge.latest { background: var(--color-primary); color: #fff; margin-left: 4.4px; }
+
+/* 最新版の下の「過去のバージョンを確認する」アコーディオン */
+.release-past { margin-top: var(--space-2); padding: 0; border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.release-past > summary { padding: 10px var(--space-3); font-size: 14px; text-transform: none; letter-spacing: 0; color: var(--color-text); }
+.release-past > summary:hover { background: var(--color-surface-hover); }
+.release-past[open] > summary { border-bottom: 1px solid var(--color-border); }
+.release-past > .accordion-body { padding: var(--space-3) var(--space-3) 0; }
+.release-entry { padding-bottom: var(--space-4); margin-bottom: var(--space-4); border-bottom: 1px solid var(--color-border); }
+.release-entry:last-child { border-bottom: none; margin-bottom: 0; }
+.release-entry h3 { font-size: 15.4px; margin: 0 0 var(--space-2); display: flex; align-items: center; gap: 6.6px; }
+.release-date { margin-left: auto; font-size: 12.7px; font-weight: 400; color: var(--color-text-muted); }
+.release-entry h4 { font-size: 13.2px; margin: var(--space-3) 0 4.4px; color: var(--color-text-muted); }
+.release-entry ul { margin: 0; padding-left: 1.4em; font-size: 13.8px; line-height: 1.7; }
+
+/* ==========================================================================
+   Leaflet マーカー形状
+   ========================================================================== */
+.vertex-marker {
+  width: 14px;
+  height: 14px;
+  background: #1565c0;
+  border: 2.5px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 2px rgba(0,0,0,0.6);
+  cursor: grab;
+}
+.vertex-marker.start { background: var(--color-primary); }
+.vertex-marker.end { background: #e65100; }
+.vertex-marker.locked {
+  border-radius: 3px;
+  border-color: #212121;
+  cursor: not-allowed;
+}
+/* 選択中の点: 普通の点（青）と区別できるよう、同じ大きさのまま、黄色に塗り、細い赤い縁を付ける（簡素な表示）。
+   始点（緑）・終点（オレンジ）は、役割の色を保ったまま、同じ縁だけを付ける。 */
+.vertex-marker.selected {
+  box-shadow: 0 0 0 1.5px #d50000;
+  z-index: 1;
+}
+.vertex-marker.selected:not(.start):not(.end) { background: #ffb300; }
+.leaflet-marker-dragging .vertex-marker { cursor: grabbing; }
+
+.vertex-label {
+  background: rgba(255, 255, 255, 0.95);
+  border: 1.5px solid #999;
+  border-radius: 3px;
+  padding: 0 5.5px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.vertex-label-start { color: var(--color-primary); border-color: var(--color-primary); }
+.vertex-label-end { color: #c53f00; border-color: #c53f00; } /* 文字は、白の地で 4.5:1 以上 */
+
+.midpoint-marker {
+  width: 9px;
+  height: 9px;
+  background: rgba(21,101,192,0.5);
+  border: 1px solid rgba(255,255,255,0.85);
+  border-radius: 50%;
+  cursor: grab;
+}
+.leaflet-marker-dragging .midpoint-marker { cursor: grabbing; }
+
+.btn.active-toggle {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+.btn.active-toggle:hover { background: var(--color-primary-dark); }
+
+.ic-marker-wrap { display: flex; align-items: center; justify-content: center; }
+
+.ic-shape { border: 2px solid #333; background: #fff; }
+/* 選択中の点に施設点（IC・JCTなど）があるとき: 施設点が操作点の上に重なるため、施設点の周りに黄色＋細い赤の縁を付ける */
+.ic-shape.selected { box-shadow: 0 0 0 2px #ffb300, 0 0 0 3.5px #d50000; }
+.ic-shape.shape-circle { border-radius: 50%; }
+.ic-shape.shape-diamond { transform: rotate(45deg); }
+.ic-shape.shape-pentagon {
+  border: none;
+  background: #333;
+  clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+}
+
+.ic-label {
+  background: rgba(255,255,255,0.92);
+  border: 1px solid #999;
+  border-radius: 3px;
+  padding: 1px 5.5px;
+  font-size: 12.1px;
+  white-space: nowrap;
+}
+
+/* [hidden] 属性は、同specificityの display 指定（.field, .empty-state,
+   .modal-overlay など）に上書きされてしまうことがあるため、!important で
+   常に優先させる。個別クラスを都度許可リストに追加する方式は漏れが
+   発生した（実例: .field の display:flex により #ic-half-direction-field
+   が意図せず表示され続けるバグ）ため、要素全体に対して一括で適用する。 */
+[hidden] {
+  display: none !important;
+}
+
+/* ==========================================================================
+   レスポンシブ（狭幅ビューポート）
+   ========================================================================== */
+/* 幅760px以下（スマホ）では、サイドバーは画面の下から出るシートになる（下の「スマホのレイアウト」を参照） */
+@media (max-width: 760px) {
+  .popover { left: auto; right: 0; }
+}
+
+/* ボタンが多いトップバーは、サイドバーが縦積みになる幅より広い段階から折り返す */
+@media (max-width: 1180px) {
+  #topbar { height: auto; flex: 0 0 auto; flex-wrap: wrap; gap: var(--space-2); padding: 6.6px var(--space-3); }
+  .topbar-mapname { order: 2; flex: 1 0 100%; }
+  .topbar-actions { flex: 1 1 auto; flex-wrap: wrap; }
+  .map-name-input { width: 100%; text-align: left; border-color: var(--color-border); }
+  .topbar-divider { display: none; }
+}
+@media (max-width: 760px) {
+  .topbar-brand .brand-text { display: none; }
+}
+
+/* ==========================================================================
+   複数選択・元に戻す/やり直し まわり
+   ========================================================================== */
+.context-menu {
+  position: fixed;
+  z-index: 3000;
+  min-width: 242px;
+  padding: 4.4px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.context-menu-title {
+  padding: 4.4px 11px 6.6px;
+  font-size: 12.1px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8.8px 11px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font-size: 13.8px;
+  text-align: left;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.context-menu-item:hover:not(:disabled) { background: var(--color-primary-light); }
+.context-menu-item.danger { color: var(--color-danger); }
+.context-menu-item.danger:hover:not(:disabled) { background: var(--color-danger-light); }
+.context-menu-item:disabled { color: var(--color-text-muted); cursor: not-allowed; }
+.context-menu-item:focus-visible { outline: 2px solid var(--color-primary); }
+.context-menu-separator { height: 1px; margin: 4.4px 0; background: var(--color-border); }
+
+/* 始点・終点の状態と操作（2行） */
+.endpoint-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--space-3);
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+.ep-row { display: flex; align-items: center; gap: var(--space-2); min-height: 32px; }
+.ep-label {
+  flex: none;
+  min-width: 42px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.ep-label.ep-start { background: var(--color-primary); }
+.ep-label.ep-end { background: #c53f00; } /* 白い文字が 4.5:1 以上 */
+.ep-state { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--color-text-muted); }
+.ep-state.locked { color: var(--color-text); font-weight: 600; }
+.ep-state.pending { color: #b45309; font-weight: 600; }
+/* トグルスイッチ（オン／オフ）。始点・終点のロックなどに使う。role="switch" と aria-checked で状態を表す */
+.switch {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 2px;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+}
+.switch-track {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--color-control-border);
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.switch[aria-checked="true"] .switch-track { background: var(--color-primary); }
+.switch[aria-checked="true"] .switch-knob { left: 18px; }
+.switch:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 6px; }
+.switch:disabled { opacity: 0.5; cursor: not-allowed; }
+.ep-switch { min-width: 84px; }
+@media (pointer: coarse) { .switch { min-height: 40px; } }
+
+/* 折りたたみの見出しの右に出す、補足（リリースノートの「過去のバージョン」など） */
+.acc-summary {
+  margin-left: var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-primary-dark);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.acc-summary:empty { display: none; }
+
+.selection-bar {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+.selection-bar .btn { flex: 1; justify-content: center; }
+
+.kbd {
+  display: inline-block;
+  padding: 0 5.5px;
+  border: 1px solid var(--color-border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--color-surface);
+  font-family: var(--font-sans);
+  font-size: 12.1px;
+  line-height: 1.5;
+}
+
+.shortcut-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-2) 0 var(--space-3);
+  font-size: 14.3px;
+}
+.shortcut-table td { padding: 8.8px 13.2px; border: 1px solid var(--color-border); vertical-align: middle; }
+.shortcut-table td:first-child { width: 42%; background: var(--color-bg); white-space: nowrap; }
+
+@media (max-width: 760px) {
+  .manual-quick { grid-template-columns: 1fr; }
+  .manual-nav { top: calc(-1 * var(--space-4)); }
+}
+
+/* ==========================================================================
+   マニュアルの読みやすさ（v1.49.3）: 広い画面では目次を左に固定し、狭い画面では目次を1行で横に流す
+   ========================================================================== */
+.manual-panel.has-toc { display: flex; align-items: flex-start; gap: var(--space-5); max-width: none; }
+.manual-content { flex: 1 1 auto; min-width: 0; max-width: 760px; }
+.manual-panel h3 { scroll-margin-top: 64px; }
+.manual-panel h4 {
+  margin: var(--space-4) 0 var(--space-2);
+  padding-left: 9px;
+  border-left: 3px solid var(--color-primary);
+  font-size: 14.9px;
+  line-height: 1.5;
+}
+/* 説明の表（言葉・場所・操作・項目など） */
+.manual-def {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-2) 0 var(--space-4);
+  font-size: 14.3px;
+  line-height: 1.7;
+}
+.manual-def th, .manual-def td { padding: 8.8px 13.2px; border: 1px solid var(--color-border); text-align: left; vertical-align: top; }
+.manual-def thead th { background: var(--color-primary-light); color: var(--color-primary-dark); font-size: 13.2px; }
+.manual-def tbody th { width: 27%; background: var(--color-bg); color: var(--color-primary-dark); font-weight: 700; }
+/* マニュアルの図（<figure class="manual-figure">。SVGは、マニュアルを開いたときに入る） */
+.manual-figure {
+  margin: var(--space-3) 0 var(--space-4);
+  max-width: 520px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.manual-figure .tutorial-svg { display: block; width: 100%; height: auto; }
+.manual-figure figcaption {
+  padding: 7px 12px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg);
+  font-size: 12.7px;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+/* 横に長い図（路線図の向き）は、本文の幅いっぱいに */
+.manual-figure[data-figure="diagram"] { max-width: none; }
+
+@media (min-width: 901px) {
+  /* 左の目次: 縦に並べ、スクロールしても見えるように固定する（いま読んでいる節を強調する） */
+  .manual-toc {
+    flex: 0 0 176px;
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 2px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    max-height: calc(90vh - 140px);
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    border-bottom: none;
+    box-shadow: none;
+  }
+  .manual-toc a {
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    background: transparent;
+    padding: 6.6px 10px;
+    font-size: 13.2px;
+  }
+  .manual-toc a:hover { background: var(--color-primary-light); }
+  .manual-toc a.current { background: var(--color-primary-light); border-left-color: var(--color-primary); color: var(--color-primary-dark); }
+}
+@media (max-width: 900px) {
+  .manual-panel.has-toc { flex-direction: column; gap: 0; }
+  .manual-content { max-width: none; }
+  /* 目次は、1行の横スクロールにして、画面を取りすぎないようにする */
+  .manual-toc { flex-wrap: nowrap; overflow-x: auto; align-self: stretch; width: auto; -webkit-overflow-scrolling: touch; }
+  .manual-toc a { flex: none; white-space: nowrap; }
+}
+@media (max-width: 600px) {
+  .manual-def tbody th { width: 34%; }
+  .manual-def th, .manual-def td { padding: 7px 9px; }
+}
+
+/* ==========================================================================
+   凡例（地図の左下のボタンで開閉する、地図・路線図の上に重ねるパネル）
+   ========================================================================== */
+/* 路線が1本もない最初の状態の、大きな「路線を追加」ボタン */
+.empty-cta {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-2) var(--space-2);
+  text-align: center;
+}
+.empty-cta-title { margin: 0; font-size: 16.5px; font-weight: 700; }
+.empty-cta-btn {
+  justify-content: center;
+  padding: 18px 20px;
+  font-size: 19px;
+  font-weight: 700;
+  border-radius: var(--radius-md);
+  box-shadow: 0 0 0 0 rgba(27, 122, 61, 0.45), var(--shadow-md);
+  animation: cta-pulse 2s ease-out infinite;
+}
+.empty-cta-hint { margin: 0; font-size: 12.7px; line-height: 1.6; color: var(--color-text-muted); }
+@keyframes cta-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(27, 122, 61, 0.45), var(--shadow-md); }
+  70% { box-shadow: 0 0 0 14px rgba(27, 122, 61, 0), var(--shadow-md); }
+  100% { box-shadow: 0 0 0 0 rgba(27, 122, 61, 0), var(--shadow-md); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .empty-cta-btn { animation: none; }
+}
+
+.legend-widget {
+  position: absolute;
+  left: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 600; /* 地図（z-index:0）より上。地図の操作はパネル以外では妨げない */
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: calc(100% - 2 * var(--space-3));
+  max-height: calc(100% - 2 * var(--space-3));
+  pointer-events: none; /* ウィジェットの余白は地図を素通しにする */
+}
+.legend-widget > * { pointer-events: auto; }
+.legend-toggle { box-shadow: var(--shadow-md); }
+
+.legend-panel {
+  width: 430px;
+  max-width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+.legend-panel-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  font-size: 14.3px;
+}
+.legend-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 var(--space-3) var(--space-3);
+  /* 地図の高さに収まるよう、パネルの高さを制限する */
+  max-height: min(480px, calc(100vh - 270px));
+  counter-reset: manual-section;
+  font-size: 12.7px;
+}
+/* 目次（上部に固定） */
+.legend-panel-body .manual-nav {
+  margin: 0 calc(-1 * var(--space-3)) var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  top: 0;
+  box-shadow: 0 2px 6px rgba(16, 24, 40, 0.06);
+  gap: 4px;
+}
+.legend-panel-body .manual-nav a { font-size: 12px; padding: 3px 8px; }
+/* 見出し・本文・囲みを、パネル用に小さく */
+.legend-panel-body h3 {
+  counter-increment: manual-section;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 8px;
+  padding-bottom: 5px;
+  border-bottom: 2px solid var(--color-primary-light);
+  font-size: 14.3px;
+  scroll-margin-top: 60px;
+}
+.legend-panel-body h3::before {
+  content: counter(manual-section);
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.legend-panel-body p { margin: 0 0 8px; font-size: 12.7px; line-height: 1.7; }
+.legend-panel-body .manual-note { padding: 8px 10px; font-size: 12.2px; line-height: 1.65; }
+
+.legend-list {
+  margin-bottom: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 7px var(--space-2);
+  border-bottom: 1px solid var(--color-border);
+}
+.legend-row:last-child { border-bottom: none; }
+.legend-row:nth-child(even) { background: var(--color-bg); }
+.legend-figure {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 地図タイルに近い明るい背景の上に置いて、実際の見え方に近づける */
+  background: #f2efe9;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+  max-width: 55%;
+}
+.legend-row-wide { flex-direction: column; align-items: stretch; }
+.legend-row-wide .legend-figure { max-width: 100%; justify-content: center; }
+.legend-fig { display: block; max-width: 100%; height: auto; }
+.legend-text { flex: 1 1 auto; min-width: 0; font-size: 12.5px; line-height: 1.6; }
+.legend-text > b { display: block; font-size: 13.2px; color: var(--color-text); }
+.legend-text span { color: var(--color-text-muted); }
+.legend-text span b { color: var(--color-text); }
+
+@media (max-width: 760px) {
+  .legend-panel { width: 100%; }
+  .legend-panel-body { max-height: 40vh; }
+}
+
+/* ==========================================================================
+   チュートリアル（画像と説明を1枚ずつめくる）
+   ========================================================================== */
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.7px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.checkbox-field input { accent-color: var(--color-primary); flex: none; }
+
+.tutorial-modal {
+  width: min(720px, 94vw);
+  max-height: 94vh;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tutorial-header {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4) var(--space-2);
+}
+.tutorial-progress { font-size: 13px; font-weight: 700; color: var(--color-text-muted); }
+.tutorial-figure {
+  flex: none;
+  margin: 0 var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #eceee4;
+}
+.tutorial-svg { display: block; width: 100%; height: auto; }
+.tutorial-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-5) 0;
+}
+.tutorial-content h2 { margin: 0 0 var(--space-2); font-size: 19px; }
+.tutorial-text { font-size: 14.3px; line-height: 1.75; min-height: 8.5em; }
+.tutorial-text p { margin: 0 0 var(--space-2); font-size: inherit; line-height: inherit; }
+.tutorial-text ul, .tutorial-text ol { margin: 0 0 var(--space-2); padding-left: 1.4em; }
+.tutorial-text li { margin-bottom: 3px; }
+.tutorial-dots {
+  flex: none;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: var(--space-2) var(--space-4) 0;
+}
+.tutorial-dot {
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border-strong);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+.tutorial-dot:hover { border-color: var(--color-primary); }
+.tutorial-dot.active { background: var(--color-primary); border-color: var(--color-primary); }
+.tutorial-dot:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.tutorial-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4) var(--space-4);
+}
+.tutorial-nav { display: flex; gap: var(--space-2); }
+.tutorial-nav .btn { min-width: 88px; justify-content: center; }
+
+@media (max-width: 760px) {
+  .tutorial-footer { flex-direction: column-reverse; align-items: stretch; }
+  .tutorial-nav .btn { flex: 1; }
+  .tutorial-text { min-height: 0; }
+}
+
+/* ==========================================================================
+   狭い画面（サイドバーが地図の上に縦積みになる幅）での、画面内への収め方
+   地図エリアが画面の下にはみ出しても、凡例が見えなくならないよう、
+   画面の下端に固定して表示する。トップバーもコンパクトにして、地図の高さを確保する。
+   ========================================================================== */
+@media (max-width: 760px) {
+  #topbar { gap: 4px; padding: 4px var(--space-2); }
+  .topbar-actions { gap: 4px; }
+  .topbar-actions .btn { padding: 5px 8px; font-size: 12.5px; }
+  .map-name-input { padding: 4px 8px; }
+}
+
+/* 路線図モードのサイドメニュー: 施設の表示設定 */
+.facility-list { display: flex; flex-direction: column; gap: var(--space-2); max-height: none; }
+.facility-item {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+.facility-head { display: flex; align-items: center; gap: var(--space-2); margin-bottom: var(--space-2); }
+.facility-no {
+  flex: none;
+  min-width: 34px;
+  padding: 1px 7px;
+  border: 2px solid var(--color-primary);
+  border-radius: 999px;
+  color: var(--color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.facility-no.none { border-color: var(--color-border-strong); color: var(--color-text-muted); border-style: dashed; }
+.facility-name { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.facility-controls { display: flex; align-items: center; gap: var(--space-2); margin-top: var(--space-1); }
+.facility-controls select, .facility-controls input[type="text"] {
+  padding: 5px 8px;
+  border: 1px solid var(--color-control-border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  background: var(--color-surface);
+}
+.facility-controls select { flex: 1 1 auto; min-width: 0; }
+.facility-controls input[type="text"] { width: 96px; flex: none; }
+.facility-controls .checkbox-field { flex: 1 1 auto; }
+.facility-controls .fac-goto { flex: none; }
+
+/* 「路線」タブの「JCTでの分岐」欄 */
+.link-branch-now { margin: 0 0 var(--space-2); font-size: 13px; line-height: 1.6; }
+.link-at-note { margin: 4px 0 0; }
+.link-sub { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
+.link-sub-title { margin-bottom: var(--space-1); font-size: 13.2px; font-weight: 700; }
+.link-kids { margin-top: var(--space-2); display: flex; flex-direction: column; gap: var(--space-1); }
+.link-kid { justify-content: flex-start; text-align: left; height: auto; white-space: normal; overflow-wrap: anywhere; line-height: 1.5; }
+
+/* 施設タブ: 対象の路線の表示 */
+.facility-scope { margin: 0 0 var(--space-2); font-size: 12.5px; line-height: 1.6; color: var(--color-text-muted); }
+.facility-scope b { color: var(--color-text); }
+#point-open-row { margin-bottom: var(--space-2); }
+
+/* ==========================================================================
+   スマホのレイアウト（幅760px以下）
+   サイドバーを、地図・路線図の上に重なる「下から出るシート」にする（地図を画面いっぱいに使えるように）。
+   シートは、上端のボタン（#sheet-toggle）で開閉する（閉じると、ボタンだけが下端に残る）。
+   シートの高さは --sheet-h（#app が持つ。閉じているとき46px、開いているとき画面の46%まで）。
+   ========================================================================== */
+.sheet-toggle { display: none; }
+
+@media (max-width: 760px) {
+  #app { --sheet-h: 46px; }
+  #app.sheet-open { --sheet-h: min(46dvh, 420px); }
+
+  /* --- トップバー: 1段目に「マーク・バージョン・地図名称」、2段目にボタン --- */
+  #topbar { flex-wrap: wrap; height: auto; flex: 0 0 auto; gap: 6px; padding: 6px var(--space-2); }
+  .topbar-brand { order: 0; }
+  .topbar-mapname { order: 1; flex: 1 1 0; min-width: 0; }
+  .topbar-actions { order: 2; flex: 1 0 100%; display: flex; gap: 4px; }
+  .topbar-actions > .btn, .topbar-actions > .dropdown { flex: 1 1 0; min-width: 0; }
+  .topbar-actions .dropdown > .btn { width: 100%; }
+  .topbar-actions > #btn-open-manual { flex-grow: 1.5; } /* 「マニュアル」は文字数が多いので、少し広く */
+  .topbar-actions .btn { justify-content: center; padding: 8px 4px; font-size: 13px; }
+  .topbar-divider { display: none; }
+  .map-name-input { width: 100%; padding: 7px 8px; }
+  .mode-tab { padding: 10px 16px; }
+
+  /* --- 地図・路線図は画面いっぱい。シートが重なる分だけ、下の部品を上げる --- */
+  #body-layout { position: relative; }
+  #map-area { flex: 1 1 auto; min-height: 0; }
+  .leaflet-bottom { margin-bottom: calc(var(--sheet-h) + env(safe-area-inset-bottom, 0px)); }
+  #diagram-area::after { content: ""; display: block; height: calc(var(--sheet-h) + env(safe-area-inset-bottom, 0px)); }
+  .legend-widget {
+    position: fixed;
+    left: var(--space-2);
+    right: var(--space-2);
+    bottom: calc(var(--sheet-h) + env(safe-area-inset-bottom, 0px) + var(--space-2));
+    max-width: none;
+    max-height: none;
+  }
+
+  /* --- サイドバー（シート） --- */
+  #sidebar {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    order: 0;
+    width: 100%;
+    flex: none;
+    height: calc(var(--sheet-h) + env(safe-area-inset-bottom, 0px));
+    max-height: none;
+    z-index: 10; /* 地図（z-index:0）の上。トップバー（20）のポップオーバーの下 */
+    padding: 0 var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+    border-left: none;
+    border-top: 1px solid var(--color-border-strong);
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -4px 16px rgba(16, 24, 40, 0.16);
+    overscroll-behavior: contain;
+  }
+  #app:not(.sheet-open) #sidebar { padding-bottom: env(safe-area-inset-bottom, 0px); overflow: hidden; }
+  #app:not(.sheet-open) #sidebar > :not(.sheet-toggle) { display: none; }
+
+  .sheet-toggle {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 8;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 46px;
+    margin: 0 calc(-1 * var(--space-3)) calc(-1 * var(--space-3)); /* 下の余白（サイドバーの gap）を打ち消して、タブに続ける */
+    border: none;
+    border-radius: 14px 14px 0 0;
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: var(--color-border-strong); }
+  .sheet-toggle:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
+  .sidebar-head { top: 46px; margin-top: 0; }
+}
+
+/* ==========================================================================
+   タッチ操作（指で押す環境）: 押しやすい大きさにする
+   ========================================================================== */
+@media (pointer: coarse) {
+  .btn { min-height: 40px; }
+  .btn.small { min-height: 36px; }
+  .icon-btn { min-height: 40px; min-width: 40px; }
+  .mode-tab { padding-top: 12px; padding-bottom: 12px; }
+  .sidebar-tab { padding-top: 13px; padding-bottom: 11px; }
+  .route-item { min-height: 44px; }
+  .brand-version { padding-top: 5px; padding-bottom: 5px; }
+  /* 入力欄は、16px未満だと、iPhoneが入力時に画面を拡大してしまうので、16px以上にする */
+  input:not([type="color"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select { font-size: 16px; min-height: 40px; }
+  /* 地図上の点は小さいので、指で押せるよう、見えない当たり判定を広げる */
+  .vertex-marker::after,
+  .ic-shape:not(.shape-pentagon)::after { content: ""; position: absolute; inset: -12px; }
+}
+
+/* 地図の出典の表示（Leaflet）。地理院タイルの追加の出所は長くなるので、折り返して、地図の右下にまとめる */
+.leaflet-control-attribution {
+  max-width: min(560px, 75vw);
+  white-space: normal;
+  text-align: right;
+  line-height: 1.4;
+}

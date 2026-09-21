@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>架空道路マップ</title>
+<meta name="description" content="実在の地図の上に、架空の高速道路や国道を描き、路線図にまとめられるツールです。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='5' y='3' width='10' height='26' rx='3' fill='%231b7a3d'/%3E%3Crect x='17' y='3' width='10' height='26' rx='3' fill='%231b7a3d'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous" />
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+<div id="app" class="sheet-open">
+
+  <header id="topbar">
+    <div class="topbar-group topbar-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-text">架空道路マップ</span>
+      <button id="brand-version" type="button" class="brand-version" title="現在のバージョン。クリックでリリースノートを開く"></button>
+    </div>
+
+    <div class="topbar-group topbar-mapname">
+      <input type="text" id="map-name" class="map-name-input" placeholder="無題のマップ" aria-label="地図名称">
+      <span id="unsaved-badge" class="unsaved-badge" role="status" title="保存していない変更があります。「保存」から保存するか、JSONで書き出してください" hidden>未保存</span>
+    </div>
+
+    <div class="topbar-group topbar-actions">
+      <button id="btn-undo" class="btn ghost" title="元に戻す (Ctrl+Z)" disabled>元に戻す</button>
+      <button id="btn-redo" class="btn ghost" title="やり直し (Ctrl+Y / Ctrl+Shift+Z)" disabled>やり直し</button>
+      <span class="topbar-divider" aria-hidden="true"></span>
+
+      <button id="btn-new-map" class="btn ghost" title="現在の内容を破棄して新規作成">新規</button>
+
+      <div class="dropdown">
+        <button id="btn-toggle-saved" class="btn ghost" title="保存済みのマップを開く">開く</button>
+        <div id="saved-maps-popover" class="popover" hidden>
+          <div class="popover-title">保存済みマップ</div>
+          <div id="saved-maps-list" class="list-box"></div>
+        </div>
+      </div>
+
+      <div class="dropdown">
+        <button id="btn-toggle-save" class="btn primary" title="保存・書き出し・読み込み">保存</button>
+        <div id="save-popover" class="popover" hidden>
+          <div class="popover-title">このブラウザに保存</div>
+          <button id="btn-save-map" class="btn primary full" title="上の地図名称で保存します。「開く」から読み込めます">保存する</button>
+          <div class="popover-title">ファイル（JSON）</div>
+          <button id="btn-export" class="btn ghost full">エクスポート（書き出し）</button>
+          <label class="btn ghost full file-btn">
+            インポート（読み込み）
+            <input type="file" id="input-import" accept="application/json" hidden>
+          </label>
+        </div>
+      </div>
+
+      <button id="btn-open-manual" class="btn ghost" title="使い方">
+        <span class="btn-label">マニュアル</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="mode-tabs" role="tablist">
+    <button id="mode-tab-edit" class="mode-tab active" role="tab" aria-selected="true">編集</button>
+    <button id="mode-tab-diagram" class="mode-tab" role="tab" aria-selected="false">路線図</button>
+  </div>
+
+  <div id="body-layout">
+    <aside id="sidebar">
+
+      <!-- 狭い画面（スマホ）だけに出る、サイドバー（画面の下から出るシート）の開閉ボタン。広い画面では非表示 -->
+      <button id="sheet-toggle" type="button" class="sheet-toggle" aria-expanded="true" aria-controls="sidebar-head">
+        <span class="sheet-grip" aria-hidden="true"></span>
+        <span id="sheet-toggle-label" class="sheet-toggle-label">設定を閉じる</span>
+      </button>
+
+      <!-- サイドバーの切り替え（横向きの下線タブ）。一度に、選んだタブの内容だけを表示する。
+           編集モード: 路線／見た目／車線／点。路線図モード: 路線／施設。
+           路線を選んでいないときは「路線」だけを表示する（表示するタブは renderSidebarTabs() が切り替える） -->
+      <div id="sidebar-head" class="sidebar-head">
+        <div id="sidebar-tabs" class="sidebar-tabs" role="tablist" aria-label="サイドバーの切り替え">
+          <button type="button" class="sidebar-tab" role="tab" data-tab="route">路線</button>
+          <button type="button" class="sidebar-tab" role="tab" data-tab="look">見た目</button>
+          <button type="button" class="sidebar-tab" role="tab" data-tab="lane">車線</button>
+          <button type="button" class="sidebar-tab" role="tab" data-tab="point">点</button>
+          <button type="button" class="sidebar-tab" role="tab" data-tab="facility">施設</button>
+        </div>
+        <div id="sidebar-summary" class="sidebar-summary" hidden></div>
+      </div>
+
+      <!-- 路線: 路線一覧、選んだ路線の名前・向き反転・削除、始点・終点の状態 -->
+      <div class="tab-pane" data-pane="route">
+        <section class="panel">
+          <div class="panel-header">
+            <h2>路線一覧</h2>
+            <button id="btn-add-route" class="btn primary small" title="路線を追加">路線を追加</button>
+          </div>
+          <div id="route-list" class="route-list"></div>
+        </section>
+
+        <section class="panel" id="route-detail-panel">
+          <div id="route-props-empty" hidden></div>
+
+          <div id="route-props" hidden>
+            <div class="panel-header">
+              <input type="text" id="route-name" class="route-name-input" aria-label="路線名" placeholder="路線名を入力">
+              <div class="row-actions">
+                <button id="btn-reverse-route" class="icon-btn" title="始点と終点を入れ替え">向き反転</button>
+                <button id="btn-delete-route" class="icon-btn danger" title="この路線を削除">削除</button>
+              </div>
+            </div>
+
+            <div class="endpoint-status" aria-label="始点と終点">
+              <div class="ep-row">
+                <span class="ep-label ep-start">始点</span>
+                <span class="ep-state" id="ep-start-state"></span>
+                <button id="btn-lock-start" type="button" class="switch ep-switch" role="switch" aria-checked="false" aria-label="始点のロック" title="始点は、置くと自動でロックされます。動かすときは、オフにします"><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span><span class="switch-text">ロック</span></button>
+              </div>
+              <div class="ep-row">
+                <span class="ep-label ep-end">終点</span>
+                <span class="ep-state" id="ep-end-state"></span>
+                <button id="btn-decide-end" type="button" class="switch ep-switch" role="switch" aria-checked="false" aria-label="終点の決定（ロック）" title="最後の点を置いたら、オンにして、終点として決定（ロック）します"><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span><span class="switch-text">決定</span></button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- JCT・ICでの分岐（別の路線のJCTまたはICに、この路線の端をつなぐ）。中身は renderLinkPanel() が作る -->
+        <section class="panel" id="link-panel" hidden>
+          <div class="panel-header"><h2>JCT・ICでの分岐</h2></div>
+          <div id="link-body"></div>
+        </section>
+      </div>
+
+      <!-- 見た目: 路線種別・状態・色・透過 -->
+      <div class="tab-pane" data-pane="look" hidden>
+        <section class="panel">
+          <div class="field">
+            <label>路線種別</label>
+            <div id="category-presets" class="preset-grid"></div>
+          </div>
+
+          <div class="field">
+            <label>状態</label>
+            <div id="status-presets" class="segmented"></div>
+          </div>
+
+          <div class="field">
+            <label>区間別の状態</label>
+            <div id="status-segments-list" class="list-box"></div>
+
+            <div class="lane-segment-form">
+              <div class="btn-row">
+                <button id="btn-pick-status-start" type="button" class="btn ghost small">始点を選ぶ</button>
+                <button id="btn-pick-status-end" type="button" class="btn ghost small">終点を選ぶ</button>
+              </div>
+              <button id="btn-use-selected-status-range" type="button" class="btn ghost small full" disabled title="Ctrl+クリックで選んだ2点以上の、最初と最後の点を区間にします">選択中の点から区間を設定</button>
+              <p class="hint-text" id="status-range-summary">地図上で区間の始点・終点となる2つの点をクリックして選択してください</p>
+              <div id="status-range-options" class="segmented"></div>
+              <button id="btn-add-status-segment" type="button" class="btn primary full" disabled>この区間に適用</button>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field">
+              <label>色</label>
+              <input type="color" id="route-color">
+            </div>
+            <div class="field">
+              <label>透過 <span id="route-opacity-val" class="muted"></span></label>
+              <input type="range" id="route-opacity" min="0.1" max="1" step="0.1">
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 車線: 基本の車線数・供用形態（暫定）・区間別の車線数 -->
+      <div class="tab-pane" data-pane="lane" hidden>
+        <section class="panel">
+          <div class="field">
+            <label>基本の車線数（道路構造令：往復同数が原則）</label>
+            <div id="lanes-segmented" class="segmented"></div>
+          </div>
+
+          <div class="field">
+            <label>供用形態</label>
+            <div id="provisional-segmented" class="segmented">
+              <button type="button" data-provisional="0" title="計画どおりの車線数で供用する（完成形）">完成形</button>
+              <button type="button" data-provisional="1" title="将来の車線数（現在＋2車線）に対し、当面は現在の車線数で供用する（暫定）">暫定形</button>
+            </div>
+            <p class="hint-text" id="provisional-summary"></p>
+          </div>
+
+          <div class="field">
+            <label>区間別の車線数</label>
+            <div id="lane-segments-list" class="list-box"></div>
+
+            <div class="lane-segment-form">
+              <div class="btn-row">
+                <button id="btn-pick-range-start" type="button" class="btn ghost small">始点を選ぶ</button>
+                <button id="btn-pick-range-end" type="button" class="btn ghost small">終点を選ぶ</button>
+              </div>
+              <button id="btn-use-selected-range" type="button" class="btn ghost small full" disabled title="Ctrl+クリックで選んだ2点以上の、最初と最後の点を区間にします">選択中の点から区間を設定</button>
+              <p class="hint-text" id="lane-range-summary">地図上で区間の始点・終点となる2つの点をクリックして選択してください</p>
+              <div id="lane-range-lanes-segmented" class="segmented"></div>
+              <button id="btn-add-lane-segment" type="button" class="btn primary full" disabled>この区間に適用</button>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 点: 点を右クリックして開いた設定（IC・JCT）だけを表示する -->
+      <div class="tab-pane" data-pane="point" hidden>
+        <section class="panel" id="point-panel">
+          <div id="point-panel-empty" class="empty-state">
+            <p id="point-panel-hint">地図をクリックして路線を描画してください</p>
+          </div>
+
+          <div id="point-panel-body" hidden>
+            <p class="hint-text" id="point-panel-hint-active"></p>
+            <div class="selection-bar">
+              <button id="btn-clear-selection" class="btn ghost small" hidden>選択を解除 (Esc)</button>
+            </div>
+            <!-- 右クリックメニューを使わずに、設定を開くボタン（設定を開いていないときだけ表示） -->
+            <div class="btn-row" id="point-open-row">
+              <button id="btn-open-ic-section" type="button" class="btn ghost small">IC・JCTを設定</button>
+            </div>
+
+            <div class="tab-section" id="point-section-ic" hidden>
+              <h3 class="section-title">IC・JCT設定</h3>
+              <div class="field">
+                <label>IC/JCT種別</label>
+                <select id="ic-type"></select>
+              </div>
+              <div class="field">
+                <label>名称</label>
+                <input type="text" id="ic-name" placeholder="例: ○○IC">
+              </div>
+              <div class="btn-row">
+                <button id="btn-set-ic" class="btn primary">選択点に設定</button>
+                <button id="btn-unset-ic" class="btn ghost">解除</button>
+              </div>
+            </div>
+
+          </div>
+        </section>
+      </div>
+
+      <!-- 施設（路線図モード）: 施設番号・地図上の名称ラベルなど、編集しながらでなくてもよい表示設定 -->
+      <div class="tab-pane" data-pane="facility" hidden>
+        <section class="panel" id="facility-panel">
+          <div class="panel-header"><h2>施設の表示設定</h2></div>
+          <p class="hint-text">路線図に表示する<b>施設番号</b>と、地図上の<b>名称ラベル</b>を、施設ごとに設定します。施設は、地図の編集モードで点を右クリックして置きます。番号を付けるのはIC・JCTだけです。</p>
+          <div id="facility-list" class="facility-list"></div>
+        </section>
+      </div>
+    </aside>
+
+    <main id="map-area">
+      <div id="map">
+        <div id="map-hint" class="map-hint" hidden></div>
+      </div>
+      <div id="diagram-area" hidden>
+        <!-- 拡大・縮小の操作（スクロールしても、図の領域の右上に固定する。高さ0の台の上に、絶対配置で置く） -->
+        <div id="diagram-zoom-anchor" class="diagram-zoom-anchor" hidden>
+          <div class="diagram-zoom" role="group" aria-label="路線図の拡大・縮小">
+            <button id="btn-diagram-orient" type="button" class="btn small" aria-pressed="false" title="路線図の向きを切り替える（縦向き: 始点が上／横向き: 始点が左）">横向きにする</button>
+            <button id="btn-diagram-zoom-out" type="button" class="btn small" title="縮小（Ctrl+ホイールでも）">縮小</button>
+            <button id="btn-diagram-zoom-in" type="button" class="btn small" title="拡大（Ctrl+ホイールでも）">拡大</button>
+            <button id="btn-diagram-zoom-fit" type="button" class="btn small" title="全体が見える大きさにする">全体</button>
+          </div>
+        </div>
+        <div id="diagram-empty" class="empty-state">
+          <p>路線図にできる路線がありません（点を2つ以上置いた路線が必要です）</p>
+        </div>
+        <div id="route-diagram-wrap" class="route-diagram-wrap" hidden>
+          <div id="route-diagram" hidden></div>
+        </div>
+      </div>
+
+      <!-- 凡例: 編集中もワンタッチで開閉できる（地図・路線図の上に重ねて表示。地図の操作は妨げない） -->
+      <div id="legend-widget" class="legend-widget">
+        <div id="legend-panel" class="legend-panel" role="dialog" aria-label="凡例" hidden>
+          <div class="legend-panel-header">
+            <b>凡例</b>
+            <button id="legend-close" type="button" class="icon-btn" title="凡例を閉じる">閉じる</button>
+          </div>
+          <div id="legend-panel-body" class="legend-panel-body"></div>
+        </div>
+        <button id="btn-toggle-legend" type="button" class="btn legend-toggle" aria-expanded="false" title="地図・路線図の見方（凡例）を開く／閉じる">凡例</button>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="toast-container" aria-live="polite"></div>
+
+<div id="confirm-modal" class="modal-overlay" hidden>
+  <div class="modal" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-message">
+    <p id="confirm-modal-message"></p>
+    <div class="modal-actions">
+      <button id="confirm-modal-cancel" class="btn ghost">キャンセル</button>
+      <button id="confirm-modal-ok" class="btn danger">実行する</button>
+    </div>
+  </div>
+</div>
+
+<div id="tutorial-modal" class="modal-overlay" hidden>
+  <div class="modal tutorial-modal" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+    <div class="tutorial-header">
+      <span id="tutorial-progress" class="tutorial-progress"></span>
+      <button id="tutorial-skip" type="button" class="icon-btn" title="チュートリアルを閉じる（Esc）">閉じる</button>
+    </div>
+    <div id="tutorial-figure" class="tutorial-figure"></div>
+    <div class="tutorial-content">
+      <h2 id="tutorial-title"></h2>
+      <div id="tutorial-text" class="tutorial-text"></div>
+    </div>
+    <div id="tutorial-dots" class="tutorial-dots" role="tablist" aria-label="ページ"></div>
+    <div class="tutorial-footer">
+      <label class="checkbox-field"><input type="checkbox" id="tutorial-hide-next"> 次回から自動で表示しない</label>
+      <div class="tutorial-nav">
+        <button id="tutorial-prev" type="button" class="btn ghost">戻る</button>
+        <button id="tutorial-next" type="button" class="btn primary">次へ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="release-notes-modal" class="modal-overlay" hidden>
+  <div class="modal modal-large" role="dialog" aria-modal="true" aria-labelledby="release-notes-title">
+    <div class="modal-header">
+      <h2 id="release-notes-title">リリースノート <span id="release-notes-current" class="version-badge"></span></h2>
+      <button id="release-notes-close" class="icon-btn" title="閉じる">閉じる</button>
+    </div>
+    <div class="modal-body">
+      <div id="release-notes-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="manual-modal" class="modal-overlay" hidden>
+  <div class="modal modal-large" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
+    <div class="modal-header">
+      <h2 id="manual-modal-title">マニュアル</h2>
+      <button id="manual-modal-close" class="icon-btn" title="閉じる">閉じる</button>
+    </div>
+
+    <div class="modal-body">
+      <div id="manual-panel-howto" class="manual-panel has-toc">
+        <nav class="manual-nav manual-toc" aria-label="目次">
+          <a href="#manual-h-intro">はじめに</a>
+          <a href="#manual-h-screen">画面の見方</a>
+          <a href="#manual-h-route">路線を作る</a>
+          <a href="#manual-h-point">点の操作</a>
+          <a href="#manual-h-look">路線の見た目</a>
+          <a href="#manual-h-lanes">区間別の設定</a>
+          <a href="#manual-h-ic">IC・JCT</a>
+          <a href="#manual-h-link">JCT・ICでの分岐</a>
+          <a href="#manual-h-diagram">路線図</a>
+          <a href="#manual-h-save">保存</a>
+          <a href="#manual-h-keys">元に戻す・ショートカット</a>
+          <a href="#manual-h-trouble">困ったとき</a>
+          <a href="#manual-h-license">ライセンス</a>
+          <a href="#manual-h-contact">お問い合わせ</a>
+        </nav>
+
+        <div class="manual-content">
+        <h3 id="manual-h-intro">はじめに</h3>
+        <p><b>架空道路マップ</b>は、実在の地図の上に、架空の高速道路や国道などを描くツールです。路線ごとに、種類・状態（供用中、事業中など）・車線数を設定でき、描いた路線は「路線図」で、実際の高速道路の路線図のような模式図にまとめて確認できます。</p>
+        <h4>はじめの3ステップ</h4>
+        <div class="manual-quick">
+          <div class="manual-quick-step"><b><span class="num">1</span>路線を追加</b>右側の「路線を追加」を押します</div>
+          <div class="manual-quick-step"><b><span class="num">2</span>始点から順に点を打つ</b>最初に始点、順に途中の点を置き、最後に、終点の「決定」スイッチをオンにします</div>
+          <div class="manual-quick-step"><b><span class="num">3</span>点を右クリック</b>IC・JCTなどを設定します</div>
+        </div>
+        <h4>この説明で使う言葉</h4>
+        <table class="manual-def">
+          <thead><tr><th>言葉</th><th>意味</th></tr></thead>
+          <tbody>
+            <tr><th>点</th><td>地図上の青い点です。点を順に結ぶと、路線の線になります。</td></tr>
+            <tr><th>始点・終点</th><td>路線の両端の点です。始点は緑、終点はオレンジで表示されます。</td></tr>
+            <tr><th>施設</th><td>IC・JCT・SA/PA・本線料金所・一般道の出入口の総称です。点に設定すると、地図上に施設のマークが表示されます。</td></tr>
+            <tr><th>分岐</th><td>別の路線のJCT・ICから、路線を枝分かれさせることです。</td></tr>
+            <tr><th>路線図</th><td>全路線を直線化した模式図で表示する画面です（画面上部の「路線図」タブ）。</td></tr>
+            <tr><th>状態</th><td>道路の進み具合です。供用中（実線）・事業中／建設中（破線）・計画／構想中（点線）から選びます。</td></tr>
+            <tr><th>暫定</th><td>将来の車線数（現在＋2車線）に対し、当面は現在の車線数で供用している状態です（例：暫定2車線）。</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="manual-h-screen">画面の見方</h3>
+        <figure class="manual-figure" data-figure="screen"><figcaption>画面の構成（編集モード）</figcaption></figure>
+        <table class="manual-def">
+          <thead><tr><th>場所</th><th>説明</th></tr></thead>
+          <tbody>
+            <tr><th>トップバー</th><td>画面の上部です。ツール名の横のバージョンのバッジ（クリックでリリースノート）、元に戻す／やり直し、新規、開く（保存済みマップ）、保存、マニュアルがあります。</td></tr>
+            <tr><th>モード</th><td>「編集」（地図上で路線を作る・直す）と「路線図」（全路線の模式図）を切り替えます。</td></tr>
+            <tr><th>地図</th><td>路線を描き、点を動かします。右上のボタンで、地図の種類（OpenStreetMap・国土地理院）を切り替えられます。</td></tr>
+            <tr><th>サイドバー</th><td>画面の右側（スマホでは下）にあります。上のタブで内容を切り替えます。タブの下の1行には、選んでいる路線の見た目と車線数（例：一般国道・供用中／4車線・暫定）が、どのタブでも表示されます。</td></tr>
+            <tr><th>凡例</th><td>地図（路線図）の左下の「凡例」ボタンです。線の種類・車線数・中央の線・点のマーク・IC記号などの見方を、図で確認できます。編集しながら開いたままにでき、もう一度押すか「閉じる」で閉じます。</td></tr>
+            <tr><th>チュートリアル</th><td>ページを開いたときに、基本の使い方を画像と説明で1枚ずつ紹介します。「次回から自動で表示しない」にチェックすると、次回からは表示されなくなります。</td></tr>
+          </tbody>
+        </table>
+        <h4>サイドバーのタブ</h4>
+        <table class="manual-def">
+          <thead><tr><th>タブ</th><th>設定できること</th></tr></thead>
+          <tbody>
+            <tr><th>路線</th><td>路線一覧、選んだ路線の名前・向き反転・削除、始点・終点の状態、JCT・ICでの分岐</td></tr>
+            <tr><th>見た目</th><td>路線種別・状態・区間別の状態・色・透過</td></tr>
+            <tr><th>車線</th><td>基本の車線数・供用形態（暫定）・区間別の車線数</td></tr>
+            <tr><th>点</th><td>点を選んでいるときだけ表示されます。右クリックで開いた設定（IC・JCT）を表示します。</td></tr>
+            <tr><th>施設</th><td>「路線図」モードだけのタブです。施設番号と、地図上の名称ラベルの表示を設定します。</td></tr>
+          </tbody>
+        </table>
+        <p class="manual-note">路線を選んでいないときは、「路線」タブだけが表示されます。点の設定（IC・JCT）は、<b>点を右クリックして開いたものだけ</b>が「点」タブに表示されます（右クリックすると、自動で「点」タブに切り替わります）。点を左クリックしただけでは、設定欄は開きません。別のタブに切り替えると、点の設定は閉じます。</p>
+        <h4>スマホで使うとき（画面の幅が760px以下）</h4>
+        <ul>
+          <li>サイドバーは、画面の下から出る<b>シート</b>になります。シートの上端の「設定を開く／設定を閉じる」で開閉します。閉じると、地図が画面いっぱいに広がります。</li>
+          <li>点を<b>長押し</b>すると、右クリックと同じメニューが開きます。「点」タブの「IC・JCTを設定」のボタンでも、設定を開けます。</li>
+          <li>点の設定を開くと、シートが自動で開き、選んだ点が隠れないよう地図が動きます。路線図に切り替えると、シートは閉じます。</li>
+          <li>Ctrlキーを使う複数選択は、スマホでは使えません。</li>
+        </ul>
+
+        <h3 id="manual-h-route">路線を作る</h3>
+        <figure class="manual-figure" data-figure="tutorial:始点から順に"><figcaption>始点から順に点を置き、最後に終点を決定します</figcaption></figure>
+        <ol>
+          <li>最初は、大きな「路線を追加する」ボタンを押して、新しい路線を作ります。路線名は、「路線」タブの名前欄で変更できます。</li>
+          <li>地図をクリックして、<b>始点 → 途中の点 → 終点</b>の順に点を置いていきます。最初の点が始点（緑）で、置くと自動でロックされます。最後の点が終点（オレンジ）で、次の手順で決定するまでは「終点（仮）」と表示され、まだ動かせます。</li>
+          <li>最後の点を置いたら、「路線」タブの終点の行にある「決定」スイッチをオンにして、終点を確定（ロック）します。これで、末尾への点の追加もできなくなります。</li>
+          <li>路線を切り替えるときは、路線一覧をクリックします（地図上の線をクリックしても選べます）。編集できる点が表示されるのは、選んでいる路線だけです。</li>
+          <li>「路線」タブの「向き反転」で、始点と終点を入れ替えられます。「削除」で、路線を削除できます。</li>
+        </ol>
+        <p class="manual-note">始点・終点を動かしたい、または点を追加したいときは、「路線」タブの始点・終点の行にあるスイッチをオフにして、ロックを解除します。</p>
+
+        <h3 id="manual-h-point">点の操作</h3>
+        <figure class="manual-figure" data-figure="tutorial:点を動かす"><figcaption>点をドラッグして動かします。中間点をドラッグすると、点が増えます</figcaption></figure>
+        <table class="manual-def">
+          <thead><tr><th>やりたいこと</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><th>点を動かす</th><td>点をドラッグします。</td></tr>
+            <tr><th>点を増やす</th><td>点と点の間にある半透明の点（中間点）をドラッグします。その位置に、新しい点が追加されます。</td></tr>
+            <tr><th>点を選ぶ</th><td>点をクリックします。もう一度クリックすると、選択を解除できます。</td></tr>
+            <tr><th>複数の点を選ぶ</th><td><span class="kbd">Ctrl</span>（Macは<span class="kbd">Command</span>）を押しながらクリックします。選んだ点は、まとめてドラッグ移動・削除・IC・JCTの設定ができます。</td></tr>
+            <tr><th>点を削除する</th><td>右クリックメニューの「この点を削除」、または、点を選んで<span class="kbd">Delete</span>キーを押します。ロック中の点は削除できません。</td></tr>
+            <tr><th>設定メニューを開く</th><td>点（地図上の青い点や、IC・JCTなど施設のマーク）を右クリックします。</td></tr>
+          </tbody>
+        </table>
+        <h4>右クリックメニュー</h4>
+        <figure class="manual-figure" data-figure="tutorial:右クリック"><figcaption>点を右クリックすると、点の設定メニューが開きます</figcaption></figure>
+        <table class="manual-def">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><th>IC・JCTを設定</th><td>サイドバーの「点」タブに、設定欄が開きます（左クリックだけでは開きません）。</td></tr>
+            <tr><th>この点をロック／ロックを解除</th><td>ロック中の点は、移動・削除ができません（四角形で表示されます）。始点・終点のロックは、「路線」タブで解除します。</td></tr>
+            <tr><th>この点を選択に追加／選択から外す</th><td>複数選択と同じ操作です。</td></tr>
+            <tr><th>この点を削除</th><td>点を削除します。</td></tr>
+          </tbody>
+        </table>
+        <p>複数選択中の点を右クリックすると、選んでいる点すべてが対象になります。選んでいない点を右クリックすると、その点だけを選び直します。路線に関する設定（車線数など）は、メニューには含まれません。</p>
+
+        <h3 id="manual-h-look">路線の見た目</h3>
+        <figure class="manual-figure" data-figure="tutorial:路線の見た目"><figcaption>路線種別・状態・車線数などで、地図上の線の見た目が変わります</figcaption></figure>
+        <p>サイドバーの「見た目」タブと「車線」タブで設定します。地図上での見え方（線の種類・太さ・区分線・色など）は、地図左下の「凡例」ボタンで、編集しながら図で確認できます。</p>
+        <table class="manual-def">
+          <thead><tr><th>項目</th><th>内容</th></tr></thead>
+          <tbody>
+            <tr><th>路線種別</th><td>高速自動車国道・都市高速道路・地域高規格道路・一般国道・都道府県道・市町村道から選びます。色と車線数の初期値が設定されます。</td></tr>
+            <tr><th>状態</th><td>供用中（実線）／事業中・建設中（破線）／計画・構想中（点線）から選びます。路線の一部だけ状態が違うときは、次の「区間別の設定」を使います。</td></tr>
+            <tr><th>基本の車線数</th><td>1・2・4・6・8車線から選びます。線の太さは、車線数から自動で決まります。</td></tr>
+            <tr><th>供用形態（完成形／暫定形）</th><td>「暫定形」を選ぶと、「暫定◯車線」（当面は現在の車線数で供用し、将来は＋2車線）として扱われ、将来の幅が点線の枠で表示されます。2・4・6・8車線で選べます（1車線では選べません）。暫定の路線には、路線一覧に「暫定◯車線」のタグが付きます。</td></tr>
+            <tr><th>色・透過</th><td>路線の色と透明度を設定します。</td></tr>
+          </tbody>
+        </table>
+        <h4>供用中の路線の区分線</h4>
+        <p>供用中の路線には、車線の区分線が表示されます（事業中・計画中の路線には表示されません）。</p>
+        <table class="manual-def">
+          <thead><tr><th>車線数</th><th>中央の区分線</th></tr></thead>
+          <tbody>
+            <tr><th>通常の2車線</th><td>白の破線1本</td></tr>
+            <tr><th>暫定2車線</th><td>黄色の実線1本（中央帯なし）</td></tr>
+            <tr><th>4車線以上</th><td>白の太い実線1本（中央帯あり。暫定でも同じ）。同じ向きの車線の境界は、白の破線です。</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="manual-h-lanes">区間別の設定（車線数・状態）</h3>
+        <figure class="manual-figure" data-figure="tutorial:区間ごとに"><figcaption>区間の始点と終点を選ぶと、その区間だけ車線数（や状態）を変えられます</figcaption></figure>
+        <p>1つの路線の中で、一部の区間だけ、車線数や状態を変えられます（例：供用中の路線の一部が事業中、暫定2車線の路線の一部だけ4車線）。車線数は「車線」タブの「区間別の車線数」、状態は「見た目」タブの「区間別の状態」で、同じ操作で設定します。</p>
+        <ol>
+          <li>「始点を選ぶ」を押して、地図上の点をクリックします。続けて「終点を選ぶ」を押して、地図上の点をクリックします。<span class="kbd">Ctrl</span>+クリックで2点以上を選んでいるときは、「選択中の点から区間を設定」で、最初と最後の点を区間にできます。</li>
+          <li>その区間の車線数（または状態）を選びます。</li>
+          <li>「この区間に適用」を押します。</li>
+        </ol>
+        <ul>
+          <li>登録した区間は、一覧から個別に削除できます。区間を重ねた場合は、後から登録したものが優先されます。</li>
+          <li>区間を選んでいる間は、地図をクリックしても点は追加されません（<span class="kbd">Esc</span>で取り消せます）。</li>
+          <li>点を追加・削除したり、路線の向きを反転したりしても、登録済みの区間は自動的に追従します。</li>
+          <li>状態が違う区間は、地図でも路線図でも、線の種類（実線・破線・点線）が切り替わります。路線図の見出しには、「一部事業中」などのバッジが付きます。</li>
+          <li>暫定形の点線の枠と黄色の線は、基本の車線数の区間にだけ表示されます（車線数を変えた区間は、完成した幅として表示されます）。</li>
+        </ul>
+
+        <h3 id="manual-h-ic">IC・JCT</h3>
+        <figure class="manual-figure" data-figure="tutorial:IC・JCT"><figcaption>種別ごとに、地図上のマークが変わります</figcaption></figure>
+        <ol>
+          <li>点を右クリックして、「IC・JCTを設定」を選びます。サイドバーの「点」タブに、設定欄が開きます。</li>
+          <li>種別と名称を入力して、「選択点に設定」を押します。複数の点を選んでいるときは、選んでいる点すべてに設定されます。「解除」を押すと、施設の設定を外せます。</li>
+        </ol>
+        <table class="manual-def">
+          <thead><tr><th>種別</th><th>説明</th></tr></thead>
+          <tbody>
+            <tr><th>IC</th><td>インターチェンジです（丸のマーク）。</td></tr>
+            <tr><th>JCT</th><td>ジャンクションです（ひし形のマーク）。</td></tr>
+            <tr><th>SA・PA</th><td>サービスエリア・パーキングエリアです（五角形のマーク）。</td></tr>
+            <tr><th>本線料金所</th><td>本線上の料金所です（四角形のマーク）。</td></tr>
+            <tr><th>一般道の出入口</th><td>一般道との出入口や交差点です。</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li><b>施設番号を付けるのは、IC・JCTだけです</b>。SA・PA、本線料金所、一般道の出入口には付きません。</li>
+          <li>施設番号と、地図上の名称ラベルの表示は、「路線図」モードのサイドバー（「施設」タブ）で設定します。詳しくは「路線図」の節をご覧ください。名称ラベルを表示しない施設も、マウスを乗せると名称が見えます。</li>
+        </ul>
+
+        <h3 id="manual-h-link">JCT・ICでの分岐</h3>
+        <figure class="manual-figure" data-figure="branch"><figcaption>地図で見た分岐（緑の路線のJCTから、赤い路線が分岐しています）</figcaption></figure>
+        <p>別の路線のJCTまたはICに、この路線の端をつなぎます（分岐させます）。サイドバーの「路線」タブにある「JCT・ICでの分岐」欄で設定します。</p>
+        <ol>
+          <li>分岐元の路線のJCTまたはICに、あらかじめ施設を設定しておきます（点を右クリック →「IC・JCTを設定」。例：別の路線が接続する鹿児島ICや志布志IC）。SA・PAなどは、分岐元にできません。</li>
+          <li>分岐する路線（枝になる路線）を、路線一覧で選びます。枝になる路線には、点が1つ以上必要です。</li>
+          <li>「JCT・ICでの分岐」欄の「分岐元の施設」で、施設を選びます。施設は路線ごとにまとまって表示され、始点からの距離も出ます。選んだ施設の場所は、地図に<b>赤い輪</b>で示されます。</li>
+          <li>「この路線の分岐する端」（始点／終点）は、選んだ施設に近い端が、自動で選ばれます。違う端にするときは、押して選び直します。</li>
+          <li>「この路線をこの施設から分岐させる」を押します。</li>
+        </ol>
+        <p>分岐させると、<b>この路線の端の点が、分岐元の施設の位置に移動して重なります</b>（元に戻すで戻せます）。</p>
+        <ul>
+          <li>「分岐を解除する」で外せます（点の位置は変わりません）。</li>
+          <li>1つの施設から、複数の路線を分岐させられます。1本の路線が分岐できる端は、始点か終点のどちらか1つです。</li>
+          <li>つないだ点は、<b>片方を動かすと、もう片方も一緒に動きます</b>。どちらかがロック中のときは、動かせません。</li>
+          <li>分岐している路線を向き反転すると、分岐している端（始点／終点）も入れ替わります。</li>
+          <li>分岐元の施設をJCT・IC以外の種別にするか、その施設や路線を削除すると、分岐の設定は自動で外れます。</li>
+        </ul>
+        <h4>分岐する路線を、新しく作る</h4>
+        <p>分岐元の路線を選んで、「JCT・ICでの分岐」欄の「この路線から、新しい路線を分岐させる」を使うと、路線を作ってつなぐまでを、一度にできます。</p>
+        <ol>
+          <li>分岐元の路線を、路線一覧で選びます（路線に、JCTまたはICの施設が必要です）。</li>
+          <li>「分岐させる施設」で施設を選び、「この施設から、新しい路線を作る」を押します。</li>
+          <li>新しい路線ができ、始点が、選んだ施設の位置に置かれます。地図をクリックして、路線を描いていきます。</li>
+        </ol>
+        <h4>路線図での見え方</h4>
+        <ul>
+          <li>分岐する施設（JCT・IC）から横に線が伸び、分岐する路線が<b>本線の横の列</b>に並びます（2本を1画面で確認できます）。縮尺は本線と同じです。</li>
+          <li>分岐する路線の施設は、「分岐点から◯km」で表示されます。番号・IC間距離は、分岐する路線の中で数えます。</li>
+          <li>分岐が複数あれば、右に列が増えます。分岐する路線からさらに分岐する路線も、その右に並びます。</li>
+          <li>分岐元の施設に「→ 分岐: ○○線」と表示されます。名前をクリックすると、その路線を選べます。分岐元の路線の分岐欄には、「この路線から分岐している路線」の一覧が表示されます。</li>
+        </ul>
+
+        <h3 id="manual-h-diagram">路線図</h3>
+        <p>「路線図」タブでは、開いている地図の<b>全路線</b>を、実際の高速道路の路線図のように直線化した模式図で表示します。路線の編集は、「編集」タブで行います。</p>
+        <figure class="manual-figure" data-figure="diagram"><figcaption>路線図の向き（左：縦向き、右：横向き）。緑が本線、赤が分岐する路線です</figcaption></figure>
+        <h4>図の見方</h4>
+        <ul>
+          <li><b>図のまとまり</b>：JCT・ICで分岐している路線は、本線の図の中に、横の列として並びます。分岐していない（独立した）路線は、別の図として、横に並びます（図が広いときは、横にスクロールします）。点を2つ以上置いていない路線は、図に表示されません。</li>
+          <li><b>施設の並び</b>：始点を上、終点を下として、IC・JCT・SA/PAを、実際の距離に応じた間隔で並べます。各施設には、始点からの距離を表示します。隣り合う施設の間の線の上には、その間の距離（IC間距離。例: 5.3km）を表示します。</li>
+          <li><b>施設番号</b>：始点から終点に向かって、IC・JCTに1から順に振ります（SA・PA、本線料金所、出入口には付けません）。</li>
+          <li><b>路線の状態</b>：事業中の路線は破線、計画中の路線は点線で描き、見出しにバッジ（「事業中」「計画中」）を付けます。図の見出しの下には、路線種別・状態・車線数・全長を表示します。</li>
+          <li><b>線の太さと区分線</b>：線の太さは、車線数に応じて変わります（1〜8車線）。供用中の区間には、地図と同じ車線の区分線（通常の2車線は白の破線、暫定2車線は黄色の実線、4車線以上は白の太い実線と車線境界の白の破線）が入ります。暫定の区間には、将来の幅（＋2車線）を示す点線の枠が両側に付きます。事業中・計画中の区間には、区分線・枠は付きません。</li>
+          <li><b>区間別の設定がある路線</b>：車線数が基本と違う区間は、線の太さが変わり、距離のあとに車線数（例: 5.3km・4車線）が付きます。状態が違う区間は、区間ごとに線の種類が変わります。</li>
+        </ul>
+        <h4>施設の表示設定（「施設」タブ）</h4>
+        <ul>
+          <li>IC・JCTごとに、施設番号を「自動」「手動で入力（例: 9-1。6文字まで）」「表記しない」から選べます。手動・表記しないの施設は、自動の連番を消費しません（例：途中のICを「表記しない」にしても、ほかの番号は途切れずに続きます）。</li>
+          <li>地図上の名称ラベルを、常時表示するかどうかを切り替えられます。</li>
+          <li>「地図で選択」を押すと、編集モードに切り替えて、その施設の点を選びます。</li>
+        </ul>
+        <h4>向き・拡大縮小・路線の選択</h4>
+        <ul>
+          <li><b>縦向き・横向き</b>：図の右上の「横向きにする」「縦向きにする」で、向きを切り替えます。縦向きは、始点が上・終点が下で、分岐する路線は右の列に並びます。横向きは、始点が左・終点が右で、施設の名前を線の下に横書きし、分岐する路線は下の行に並びます（分岐の線は縦に伸びます）。図が複数あるときは、縦向きは横に、横向きは縦に並びます。選んだ向きは、ブラウザに覚えておきます。</li>
+          <li><b>拡大・縮小・移動</b>：図の何もない所を<b>ドラッグ</b>すると、図を動かせます（スマホは指でなぞります）。<b>Ctrl（Macは Command）+ホイール</b>（トラックパッドのピンチ、スマホは2本指のピンチ）で、その位置を中心に拡大・縮小できます。図の右上の「縮小」「拡大」ボタン、「全体」（全体が見える大きさにします）でも操作できます（20%〜250%）。ふつうのホイールは、上下のスクロールになります。</li>
+          <li><b>路線を選ぶ</b>：サイドバーの路線一覧や、図の路線名（分岐する路線の名前も）をクリックすると、その路線を選べます。選んだ路線の見出しは緑に色づき、図が自動でスクロールします。分岐する路線は、その列全体が色づき、列の見出しが見える位置へ動きます。</li>
+        </ul>
+
+        <h3 id="manual-h-save">保存</h3>
+        <h4>保存する</h4>
+        <ul>
+          <li>地図名称（トップバー中央の欄）を入力し、「保存」メニューの「保存する」を押すと、ブラウザ内（localStorage）に保存されます。同じ名前で保存すると、上書きの確認が出ます。</li>
+          <li>保存していない変更があると、地図名称の横に「未保存」と表示されます（保存・JSONの書き出し・地図の読み込み・新規作成で消えます）。その状態でページを閉じたり再読み込みしたりすると、確認の画面が出ます。</li>
+        </ul>
+        <h4>読み込む・新しく作る</h4>
+        <ul>
+          <li>「開く」の一覧に、保存済みの地図が表示されます。読み込み・削除ができます。</li>
+          <li>「新規」で、現在の内容を破棄して、新しい地図を作ります。</li>
+        </ul>
+        <h4>ファイルで書き出す・読み込む</h4>
+        <ul>
+          <li>「保存」メニューの「エクスポート」「インポート」から、JSONファイルとして書き出し／読み込みできます。他の人と共有したり、バックアップしたりするときに使います。</li>
+        </ul>
+
+        <h3 id="manual-h-keys">元に戻す・ショートカット</h3>
+        <p>トップバーの「元に戻す」「やり直し」、または下記のショートカットで、編集内容を最大100件まで遡れます（地図の読込・新規作成を行うと履歴はリセットされます）。</p>
+        <table class="shortcut-table">
+          <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">Z</span></td><td>元に戻す</td></tr>
+          <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">Y</span> / <span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">Z</span></td><td>やり直し</td></tr>
+          <tr><td><span class="kbd">Ctrl</span> + クリック</td><td>点の複数選択（追加／解除）</td></tr>
+          <tr><td>右クリック</td><td>点の設定メニュー</td></tr>
+          <tr><td><span class="kbd">Delete</span></td><td>選択中の点を削除（ロック中の点を除く）</td></tr>
+          <tr><td><span class="kbd">Esc</span></td><td>右クリックメニューを閉じる／選択の解除／区間選択の取り消し</td></tr>
+        </table>
+
+        <h3 id="manual-h-trouble">困ったとき</h3>
+        <table class="manual-def">
+          <thead><tr><th>困っていること</th><th>確認すること</th></tr></thead>
+          <tbody>
+            <tr><th>点を動かせない</th><td>その点がロック中です。右クリックで「ロックを解除」を選びます（始点・終点は、「路線」タブのスイッチをオフにします）。分岐でつないだ点は、どちらかがロック中だと、動かせません。</td></tr>
+            <tr><th>地図をクリックしても、点が追加されない</th><td>終点を決定済みです。「路線」タブの終点の行のスイッチをオフにして、解除します。区間を選んでいる最中のときは、<span class="kbd">Esc</span>で取り消します。</td></tr>
+            <tr><th>IC・JCTの設定欄が出ない</th><td>点を右クリックして「IC・JCTを設定」を選ぶか、「点」タブの「IC・JCTを設定」ボタンを押します。左クリックだけでは、設定欄は開きません。</td></tr>
+            <tr><th>路線が「路線図」に表示されない</th><td>点を2つ以上置くと、表示されます。</td></tr>
+            <tr><th>「JCT・ICでの分岐」で、分岐元の施設が選べない</th><td>分岐元の路線に、種別が「JCT」または「IC」の施設を設定してください。</td></tr>
+            <tr><th>操作を間違えた</th><td><span class="kbd">Ctrl</span> + <span class="kbd">Z</span>（トップバーの「元に戻す」）で戻せます。</td></tr>
+            <tr><th>保存した地図が見つからない</th><td>地図は、ブラウザの中（localStorage）に保存されます。別のブラウザや、別のパソコンでは表示されません。ブラウザのサイトデータを消去した場合も、消えます。大切な地図は、「エクスポート」で、JSONファイルにバックアップしておくと安心です。</td></tr>
+          </tbody>
+        </table>
+
+        <h3 id="manual-h-license">ライセンス</h3>
+        <p><b>架空道路マップ</b>（このツール）は、<b>MIT License</b> で公開しています。Copyright (c) 2026 Nasutaka（なすたか）。ソフトウェアを、無償で、使う・複製する・改変する・配布するなど、制限なく利用できます（著作権表示とライセンス表示を、複製物に残すことが条件です）。ただし、無保証で提供しています。次の利用しているソフトウェア・フォント・地図データは、それぞれのライセンスに従います。</p>
+        <details class="manual-license-full">
+          <summary>MIT License の全文</summary>
+          <pre class="manual-license-text">MIT License
+
+Copyright (c) 2026 Nasutaka (なすたか)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.</pre>
+        </details>
+        <p>このツールは、次のソフトウェア・フォント・地図データを利用しています。各ライセンスの全文は、リンク先で確認できます。</p>
+        <ul>
+          <li><b>Leaflet</b> 1.9.4（地図の描画）：BSD 2-Clause License。Copyright (c) 2010-2023, Volodymyr Agafonkin / Copyright (c) 2010-2011, CloudMade（<a href="https://leafletjs.com/" target="_blank" rel="noopener">leafletjs.com</a>）</li>
+          <li><b>Leaflet.PolylineOffset</b> 1.1.1（車線の区分線の描画）：MIT License。Copyright (c) 2014 Benjamin Becquet（<a href="https://github.com/bbecquet/Leaflet.PolylineOffset" target="_blank" rel="noopener">GitHub</a>）</li>
+          <li><b>Noto Sans JP</b>（フォント。Google Fonts から読み込みます）：SIL Open Font License 1.1（<a href="https://fonts.google.com/noto/specimen/Noto+Sans+JP/license" target="_blank" rel="noopener">Google Fonts</a>）</li>
+          <li><b>地図タイル（OpenStreetMap）</b>：&copy; OpenStreetMap contributors（地図の右下の表示から、著作権のページへ移れます）。データは Open Database License（ODbL）1.0 で提供されています（<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">openstreetmap.org/copyright</a>）</li>
+          <li><b>地図タイル（国土地理院）</b>：標準地図・淡色地図・白地図・写真は「地理院タイル」です（<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">地理院タイル一覧</a>）。国土地理院コンテンツ利用規約に従って利用しています（<a href="https://www.gsi.go.jp/kikakuchousei/kikakuchousei40182.html" target="_blank" rel="noopener">国土地理院</a>）。地図の右下に「地理院タイル」（一覧ページへのリンク）と出典を表示します。縮尺・地図の種類によって必要な追加の出所（Landsat 8 画像、GEBCO、VMAP0、GRUS画像など）も、縮尺・表示範囲に合わせて表示します</li>
+        </ul>
+
+        <h3 id="manual-h-contact">お問い合わせ</h3>
+        <p>このツールへの質問・ご意見・不具合の報告は、X（旧Twitter）のDM（ダイレクトメッセージ）でお願いします。不具合は、使っているブラウザと、操作の手順を添えていただけると助かります。</p>
+        <ul>
+          <li><b>X（旧Twitter）のDM</b>：<a href="https://x.com/nasutaka_Lab" target="_blank" rel="noopener">@nasutaka_Lab</a> のプロフィールから、DMを送ってください。</li>
+        </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet-polylineoffset@1.1.1/leaflet.polylineoffset.js" integrity="sha256-17dQ43EUETw/0d97b3XrT/F8gydb++N4QF/9oexExDM=" crossorigin="anonymous"></script>
+<script src="js/release-notes.js"></script>
+<script src="js/legend.js"></script>
+<script src="js/tutorial.js"></script>
+<script src="js/manual-figures.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
