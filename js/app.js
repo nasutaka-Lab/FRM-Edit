@@ -34,8 +34,9 @@
 
   // 区間別車線数: route.laneSegments = [{ id, fromIdx, toIdx, lanes }, ...]
   // 区間別の状態:  route.statusSegments = [{ id, fromIdx, toIdx, status }, ...]（v1.40.0）
+  // 区間別の色:    route.colorSegments = [{ id, fromIdx, toIdx, color }, ...]（v1.52.0-beta。ユーザー指定）
   // 「始点」「終点」の2点を選んで指定した区間（点 fromIdx から点 toIdx までの間）だけ、基本の値
-  // （route.lanes / route.status）を上書きする。複数区間が重なる場合は、後から追加したものを優先する
+  // （route.lanes / route.status / route.color）を上書きする。複数区間が重なる場合は、後から追加したものを優先する
   // （配列の後ろほど優先）。値は、点 k から点 k+1 までの区間（ステップ）ごとに決める。
   function segmentValueOfStep(segments, k, key, fallback) {
     const list = segments || [];
@@ -46,11 +47,12 @@
   }
   const laneOfStep = (route, k) => segmentValueOfStep(route.laneSegments, k, "lanes", route.lanes);
   const statusOfStep = (route, k) => segmentValueOfStep(route.statusSegments, k, "status", route.status || "inservice");
+  const colorOfStep = (route, k) => segmentValueOfStep(route.colorSegments, k, "color", route.color);
   // 区間別の設定のリスト（点の追加・削除・向き反転で、インデックスをそろえて直すときに使う）
-  const segmentLists = (route) => [route.laneSegments, route.statusSegments].filter(Array.isArray);
+  const segmentLists = (route) => [route.laneSegments, route.statusSegments, route.colorSegments].filter(Array.isArray);
 
-  // route.points（PI）を「車線数も状態も同じ区間が続く区間」に分割する。
-  // 戻り値: [{ startIdx, endIdx, lanes, status }, ...]（endIdxは次区間のstartIdxと共有）
+  // route.points（PI）を「車線数・状態・色がすべて同じ区間が続く区間」に分割する。
+  // 戻り値: [{ startIdx, endIdx, lanes, status, color }, ...]（endIdxは次区間のstartIdxと共有）
   function buildLaneRanges(route) {
     const pts = route.points;
     if (pts.length < 2) return [];
@@ -58,17 +60,20 @@
     let rangeStart = 0;
     let rangeLanes = laneOfStep(route, 0);
     let rangeStatus = statusOfStep(route, 0);
+    let rangeColor = colorOfStep(route, 0);
     for (let k = 1; k < pts.length - 1; k++) {
       const lanesHere = laneOfStep(route, k);
       const statusHere = statusOfStep(route, k);
-      if (lanesHere !== rangeLanes || statusHere !== rangeStatus) {
-        ranges.push({ startIdx: rangeStart, endIdx: k, lanes: rangeLanes, status: rangeStatus });
+      const colorHere = colorOfStep(route, k);
+      if (lanesHere !== rangeLanes || statusHere !== rangeStatus || colorHere !== rangeColor) {
+        ranges.push({ startIdx: rangeStart, endIdx: k, lanes: rangeLanes, status: rangeStatus, color: rangeColor });
         rangeStart = k;
         rangeLanes = lanesHere;
         rangeStatus = statusHere;
+        rangeColor = colorHere;
       }
     }
-    ranges.push({ startIdx: rangeStart, endIdx: pts.length - 1, lanes: rangeLanes, status: rangeStatus });
+    ranges.push({ startIdx: rangeStart, endIdx: pts.length - 1, lanes: rangeLanes, status: rangeStatus, color: rangeColor });
     return ranges;
   }
 
@@ -81,13 +86,33 @@
     planned: { label: "計画・構想中", dashArray: (w) => `${Math.max(2, Math.round(w * 0.35))},${Math.round(w * 1.3)}` },
   };
 
+  // short: 分岐の選択肢（facLabel()）など、狭い場所で使う短い種別名
   const IC_TYPES = {
-    ic: { label: "IC（インターチェンジ）", shape: "circle", size: 16 },
-    jct: { label: "JCT（ジャンクション）", shape: "diamond", size: 16 },
-    sapa: { label: "SA・PA", shape: "pentagon", size: 16 },
-    toll: { label: "本線料金所", shape: "square", size: 14 },
-    entrance: { label: "一般道 出入口・交差点", shape: "circle", size: 10 },
+    ic: { label: "IC（インターチェンジ）", short: "IC", shape: "circle", size: 16 },
+    jct: { label: "JCT（ジャンクション）", short: "JCT", shape: "diamond", size: 16 },
+    sapa: { label: "SA・PA", short: "SA・PA", shape: "pentagon", size: 16 },
+    toll: { label: "本線料金所", short: "料金所", shape: "square", size: 14 },
+    entrance: { label: "一般道 出入口・交差点", short: "出入口", shape: "circle", size: 10 },
+    // その他: 既存の種別に当てはまらない、自由な施設（v1.51.0-beta）。地図上の図形は、OTHER_SHAPES から
+    // 選べる（ic.shape に保存。未設定・不明な値は既定の "triangle" を使う）。名称は、ほかの種別と同じ自由記述。
+    other: { label: "その他", short: "その他", shape: "triangle", size: 16 },
   };
+
+  // 「その他」施設で選べる図形（5種類。既存のIC/JCT/SA・PA/本線料金所の丸・ひし形・五角形・四角形と被らない形にする）
+  const OTHER_SHAPES = [
+    { key: "triangle", label: "三角" },
+    { key: "hexagon", label: "六角形" },
+    { key: "star", label: "星" },
+    { key: "cross", label: "十字" },
+    { key: "octagon", label: "八角形" },
+  ];
+  function otherShapeOf(ic) {
+    return OTHER_SHAPES.some((s) => s.key === ic.shape) ? ic.shape : OTHER_SHAPES[0].key;
+  }
+  // 施設のマークの図形（IC_TYPESの既定に加え、「その他」は ic.shape で個別に選ぶ）
+  function icShapeOf(ic) {
+    return ic.type === "other" ? otherShapeOf(ic) : (IC_TYPES[ic.type] || IC_TYPES.ic).shape;
+  }
 
   const STORAGE_KEY = "koukikaku_road_tool_maps";
 
@@ -147,18 +172,12 @@
     return currentMap.routes.find((r) => r.id === activeRouteId) || null;
   }
 
-  // サイドバーの「選択点の設定」に表示する設定。点の右クリックメニューで開いたもの
-  // だけを表示する（null=何も表示しない / "ic"）。
-  let pointPanelSection = null;
-
-  // サイドバーで、いま開いているタブ（"route" / "look" / "lane" / "point" / "facility"）。
-  // 点を右クリックして設定を開くと "point" に切り替わり、ほかのタブに切り替えると点の設定は閉じる。
+  // サイドバーで、いま開いているタブ（"route" / "look" / "facility"）。
   let sidebarTab = "route";
 
   function clearSelection() {
     selectedPointIndex = null;
     selectedSet = new Set();
-    pointPanelSection = null;
   }
 
   function selectOnly(idx) {
@@ -821,7 +840,8 @@
     renderRouteList();
     renderRouteProps();
     renderLinkPanel(); // 「路線」タブの「JCT・ICでの分岐」欄
-    renderPointPanel();
+    renderFacilitySettings(); // 「設定」タブの「施設設定」欄（点を選んでいるときだけ）
+    renderPointToolbar(); // 地図に重ねる「選択中の点」ツールバー
     renderMapHint();
     if (currentMode === "diagram") renderRouteDiagram();
     recordHistory(false); // 前回の記録から編集内容が変わっていれば履歴に追加する
@@ -852,8 +872,8 @@
 
     currentMap.routes.forEach((route) => {
       if (route.points.length >= 2) {
-        // 区間別の車線数・状態により、1つの路線を、車線数も状態も一定の区間
-        // （レンジ）に分割し、区間ごとに太さ・線種の異なるポリラインとして描画する。
+        // 区間別の車線数・状態・色により、1つの路線を、車線数も状態も色も一定の区間
+        // （レンジ）に分割し、区間ごとに太さ・線種・色の異なるポリラインとして描画する。
         const ranges = buildLaneRanges(route);
         const segments = [];
 
@@ -863,7 +883,7 @@
           const weight = laneWeight(range.lanes);
           const dashArray = status.dashArray(weight);
           const line = L.polyline(latlngs, {
-            color: route.color,
+            color: range.color,
             weight,
             opacity: route.opacity,
             dashArray: dashArray,
@@ -880,8 +900,8 @@
           line.addTo(routesLayer);
 
           // 車線区分線: 太さ(=道幅)による表現に加え、線内にオフセットした
-          // 区分線を重ねて車線数そのものを視覚化する（供用中の道路のみ）。
-          const dividers = range.status === "inservice" ? drawLaneDividers(latlngs, route, range.lanes, weight) : [];
+          // 区分線を重ねて車線数そのものを視覚化する（供用中の道路のみ）。暫定の枠の色は、この区間の色。
+          const dividers = range.status === "inservice" ? drawLaneDividers(latlngs, route, range.lanes, weight, range.color) : [];
 
           segments.push({ startIdx: range.startIdx, endIdx: range.endIdx, line, dividers });
         });
@@ -935,7 +955,9 @@
     return { dividers, ghostHalf };
   }
 
-  function drawLaneDividers(latlngs, route, lanesForSegment, weightForSegment) {
+  // segmentColor: この区間の色（区間別の色が設定されていれば、その色。既定は route.color）。
+  // 暫定の枠（ghost）は、路線色ではなく、この区間の色で描く（v1.52.0-beta）。
+  function drawLaneDividers(latlngs, route, lanesForSegment, weightForSegment, segmentColor) {
     const created = [];
     const lanes = nearestValidLanes(lanesForSegment);
     if (lanes < 2) return created;
@@ -959,7 +981,7 @@
       [-specs.ghostHalf, specs.ghostHalf].forEach((off) => {
         const ghost = L.polyline(latlngs, {
           offset: off,
-          color: route.color,
+          color: segmentColor || route.color,
           weight: 1.5,
           opacity: Math.min(1, route.opacity),
           dashArray: "4,4",
@@ -974,8 +996,9 @@
 
   function addIcMarker(route, ic, pt) {
     const def = IC_TYPES[ic.type] || IC_TYPES.ic;
+    const shape = icShapeOf(ic);
     const icSelected = route.id === activeRouteId && selectedSet.has(ic.pointIndex);
-    const html = `<div class="ic-marker-wrap"><div class="ic-shape shape-${def.shape}${icSelected ? " selected" : ""}" style="width:${def.size}px;height:${def.size}px;"></div></div>`;
+    const html = `<div class="ic-marker-wrap"><div class="ic-shape shape-${shape}${icSelected ? " selected" : ""}" style="width:${def.size}px;height:${def.size}px;"></div></div>`;
     const icon = L.divIcon({
       className: "",
       html,
@@ -1019,11 +1042,6 @@
         selectOnly(ic.pointIndex);
       }
       render();
-    });
-
-    marker.on("contextmenu", (e) => {
-      L.DomEvent.stop(e);
-      openPointMenu(route, ic.pointIndex, e.originalEvent);
     });
 
     // マーカーは線の上（PIとは別の位置）にあるため、マーカーの移動量をPIに加える
@@ -1101,11 +1119,6 @@
           selectOnly(idx);
         }
         render();
-      });
-
-      marker.on("contextmenu", (e) => {
-        L.DomEvent.stop(e);
-        openPointMenu(route, idx, e.originalEvent);
       });
 
       // 複数選択中の点をドラッグしたときは、選択中の点をまとめて同じ量だけ移動する。
@@ -1281,6 +1294,7 @@
       ics: [],
       laneSegments: [],
       statusSegments: [],
+      colorSegments: [],
     };
   }
 
@@ -1347,7 +1361,7 @@
     if (route.id === trunk.id) return "同じ路線には分岐できません";
     if (route.points.length === 0) return "点のない路線は分岐させられません";
     const ic = trunk.ics.find((x) => x.pointIndex === jctPointIndex);
-    if (!ic) return "分岐元の施設（JCT・IC）を選んでください";
+    if (!ic) return "分岐元の施設を選んでください";
     let cur = trunk;
     for (let guard = 0; cur && cur.branchFrom && guard < 50; guard++) {
       if (cur.branchFrom.routeId === route.id) return "分岐がぐるぐる回る組み合わせにはできません";
@@ -1361,9 +1375,10 @@
     return null;
   }
 
-  // 分岐元にできる施設（JCTと、IC。v1.44.0でICも可能にした）
+  // 分岐元にできる施設（v1.44.0でJCTだけからJCT・ICに広げ、v1.51.0-betaで、全施設種別〔SA・PA・
+  // 本線料金所・一般道出入口・その他を含む〕に広げた。施設として設定していない、ただの点は対象外）
   function branchSourcesOf(route) {
-    return route.ics.filter((ic) => ic.type === "jct" || ic.type === "ic").sort((a, b) => a.pointIndex - b.pointIndex);
+    return route.ics.slice().sort((a, b) => a.pointIndex - b.pointIndex);
   }
 
   // 分岐元の施設を選ぶ選択肢の値: "路線のid#点の番号"
@@ -1372,7 +1387,7 @@
     const i = String(key).lastIndexOf("#");
     const r = routeById(String(key).slice(0, i));
     if (!r) return null;
-    const ic = r.ics.find((x) => x.pointIndex === Number(String(key).slice(i + 1)) && (x.type === "jct" || x.type === "ic"));
+    const ic = r.ics.find((x) => x.pointIndex === Number(String(key).slice(i + 1)));
     return ic ? { route: r, ic } : null;
   }
 
@@ -1386,7 +1401,8 @@
   // 施設の選択肢の文言（例: 加治木JCT（JCT・始点から58.6km））
   function facLabel(r, ic) {
     const km = (distanceAlongRoute(r, ic.pointIndex) / 1000).toFixed(1);
-    return `${ic.name || "(無名)"}（${ic.type === "jct" ? "JCT" : "IC"}・始点から${km}km）`;
+    const short = (IC_TYPES[ic.type] || IC_TYPES.ic).short;
+    return `${ic.name || "(無名)"}（${short}・始点から${km}km）`;
   }
 
   // route の端のうち、点 tp に近いほう（点が2つ未満なら始点）
@@ -1439,7 +1455,7 @@
         const endName = (v) => (v === "start" ? "始点" : "終点");
         const twoPoints = route.points.length >= 2;
         html +=
-          '<p class="hint-text">この路線の端を、別の路線のJCT・ICにつなぎます（分岐させます）。選んだ施設の場所は、地図に赤い輪で示されます。</p>' +
+          '<p class="hint-text">この路線の端を、別の路線の施設につなぎます（分岐させます）。選んだ施設の場所は、地図に赤い輪で示されます。</p>' +
           '<div class="field"><label>分岐元の施設</label><select id="branch-fac">' +
           trunks
             .map(
@@ -1459,7 +1475,7 @@
           "</div>" +
           '<button id="btn-set-branch" type="button" class="btn primary small full">この路線をこの施設から分岐させる</button>';
       } else {
-        html += '<p class="hint-text">分岐元にできる施設がありません。別の路線に、種別が「JCT」または「IC」の施設を設定してください（点を右クリック →「IC・JCTを設定」）。</p>';
+        html += '<p class="hint-text">分岐元にできる施設がありません。別の路線の点を選び、「設定」タブの「施設設定」で、施設を設定してください。</p>';
       }
     }
 
@@ -1743,13 +1759,23 @@
     recordHistory(true);
   });
 
+  // 区間別の設定フォーム（始点・終点・選んだ値）が、直前にどの路線を対象にしていたか。
+  // 路線を切り替えたら、選択中の区間（点番号）は別の路線には通用しないため、必ずリセットする
+  // （v1.50.1-beta で修正: リセットしていなかったため、切り替え後の路線に、別路線で選んだ点番号のまま
+  // 区間設定が適用され、意図しない区間の見た目が変わる不具合があった）。
+  let rangeFormsRouteId = undefined;
   function renderRouteProps() {
     const route = getActiveRoute();
     if (!route) {
       routePropsEmptyEl.hidden = false;
       routePropsEl.hidden = true;
+      rangeFormsRouteId = undefined;
       resetRangeForms();
       return;
+    }
+    if (rangeFormsRouteId !== route.id) {
+      rangeFormsRouteId = route.id;
+      resetRangeForms();
     }
     routePropsEmptyEl.hidden = true;
     routePropsEl.hidden = false;
@@ -1778,14 +1804,14 @@
   }
 
   // ---------------------------------------------------------------------
-  // サイドバー: 点・IC操作
+  // サイドバー: 点・施設設定（旧「点」タブ。v1.51.0-beta で、「設定」タブに統合した）
   // ---------------------------------------------------------------------
-  const pointPanelEmptyEl = document.getElementById("point-panel-empty");
-  const pointPanelBodyEl = document.getElementById("point-panel-body");
-  const pointPanelHintEl = document.getElementById("point-panel-hint");
-  const pointPanelHintActiveEl = document.getElementById("point-panel-hint-active");
+  const facilitySettingsSectionEl = document.getElementById("facility-settings-section");
+  const facilitySettingsHintEl = document.getElementById("facility-settings-hint");
   const icTypeSelect = document.getElementById("ic-type");
   const icNameInput = document.getElementById("ic-name");
+  const icShapeFieldEl = document.getElementById("ic-shape-field");
+  const icShapePickerEl = document.getElementById("ic-shape-picker");
 
   Object.entries(IC_TYPES).forEach(([key, def]) => {
     const opt = document.createElement("option");
@@ -1793,6 +1819,25 @@
     opt.textContent = def.label;
     icTypeSelect.appendChild(opt);
   });
+
+  // 「その他」施設で選ぶ図形。選択中の値は、施設設定を表示するたびに、選択点の設定に合わせて作り直す
+  let pendingOtherShape = OTHER_SHAPES[0].key;
+  OTHER_SHAPES.forEach((s) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.dataset.shape = s.key;
+    btn.textContent = s.label;
+    btn.addEventListener("click", () => {
+      pendingOtherShape = s.key;
+      updateIcShapePicker();
+    });
+    icShapePickerEl.appendChild(btn);
+  });
+  function updateIcShapePicker() {
+    icShapeFieldEl.hidden = icTypeSelect.value !== "other";
+    icShapePickerEl.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.shape === pendingOtherShape));
+  }
+  icTypeSelect.addEventListener("change", updateIcShapePicker);
 
   // 1点を削除し、IC・区間別車線数のインデックスを詰める。
   function deletePointAt(route, idx) {
@@ -1810,6 +1855,7 @@
         .filter((seg) => seg.fromIdx >= 0 && seg.fromIdx < seg.toIdx);
     route.laneSegments = fixSegments(route.laneSegments);
     route.statusSegments = fixSegments(route.statusSegments);
+    route.colorSegments = fixSegments(route.colorSegments);
   }
 
   // 選択中の点（複数選択可。未選択なら末尾点）をまとめて削除する。
@@ -1842,13 +1888,18 @@
     if (!route || route.points.length === 0) return;
     const type = icTypeSelect.value;
     const name = icNameInput.value.trim();
+    const shape = type === "other" ? pendingOtherShape : undefined;
     targetIndices(route).forEach((idx) => {
       const existing = route.ics.find((ic) => ic.pointIndex === idx);
       if (existing) {
         existing.type = type;
         existing.name = name;
+        if (shape) existing.shape = shape;
+        else delete existing.shape;
       } else {
-        route.ics.push({ pointIndex: idx, type, name, labelVisible: true });
+        const ic = { pointIndex: idx, type, name, labelVisible: true };
+        if (shape) ic.shape = shape;
+        route.ics.push(ic);
       }
     });
     render();
@@ -1871,33 +1922,53 @@
   let rangePickingForm = null; // rangePicking のとき、選んだ点を使うフォーム
   const rangeForms = [];
 
-  // 区間別の設定フォームを作る。cfg:
-  //  ids: 画面の部品のid（pickStart / pickEnd / useSelected / summary / options / apply / list）
-  //  options: [{ value, label, title }] 適用する値の選択肢
-  //  valueName: 値の名前（「車線数」「状態」。案内の文に使う）／emptyText: 区間が1つもないときの文
-  //  add(route, fromIdx, toIdx, value) / items(route) → [{ id, text }] / remove(route, id)
-  function createRangeForm(cfg) {
-    const el = (key) => document.getElementById(cfg.ids[key]);
-    const pickStart = el("pickStart");
-    const pickEnd = el("pickEnd");
-    const useSelected = el("useSelected");
-    const summary = el("summary");
-    const options = el("options");
-    const apply = el("apply");
-    const list = el("list");
-    const st = { start: null, end: null, value: null };
+  // 区間別の設定フォーム（車線数・状態。v1.51.0-beta で、1つの区間選択に統合した。保存データは、
+  // これまでどおり route.laneSegments / route.statusSegments の2つに分けたまま持つ（互換性のため）。
+  // どちらか一方だけを選んで適用してもよい（両方選べば、同じ区間に両方登録される）。
+  function createCombinedRangeForm() {
+    const pickStart = document.getElementById("btn-pick-range-start");
+    const pickEnd = document.getElementById("btn-pick-range-end");
+    const useSelected = document.getElementById("btn-use-selected-range");
+    const summary = document.getElementById("range-summary");
+    const laneOptionsEl = document.getElementById("range-lanes-segmented");
+    const statusOptionsEl = document.getElementById("range-status-segmented");
+    const colorEnable = document.getElementById("range-color-enable");
+    const colorInput = document.getElementById("range-color-input");
+    const apply = document.getElementById("btn-add-range-segment");
+    const list = document.getElementById("range-segments-list");
+    const NONE = ""; // 「変更しない」を表す値
+    const st = { start: null, end: null, lanes: null, status: null, color: null };
 
-    cfg.options.forEach((opt) => {
+    const addOption = (container, value, label, onSelect) => {
       const btn = document.createElement("button");
       btn.type = "button";
-      btn.dataset.value = String(opt.value);
-      btn.textContent = opt.label;
-      if (opt.title) btn.title = opt.title;
+      btn.dataset.value = value === null ? NONE : String(value);
+      btn.textContent = label;
       btn.addEventListener("click", () => {
-        st.value = opt.value;
+        onSelect();
         form.renderForm();
       });
-      options.appendChild(btn);
+      container.appendChild(btn);
+    };
+    addOption(laneOptionsEl, null, "変更しない", () => (st.lanes = null));
+    LANE_OPTIONS.forEach((n) => addOption(laneOptionsEl, n, String(n), () => (st.lanes = n)));
+    addOption(statusOptionsEl, null, "変更しない", () => (st.status = null));
+    Object.entries(STATUSES).forEach(([key, def]) => addOption(statusOptionsEl, key, def.label, () => (st.status = key)));
+
+    // 色は選択肢が無数にあるので、チェックボックス（変える／変えない）＋色選択欄にする。
+    // オンにした直後は、色選択欄の初期値を、いまの路線の色にそろえる（そのまま使うか、変えて選べる）
+    colorEnable.addEventListener("change", () => {
+      if (colorEnable.checked) {
+        const route = getActiveRoute();
+        if (route) colorInput.value = route.color;
+        st.color = colorInput.value;
+      } else {
+        st.color = null;
+      }
+      form.renderForm();
+    });
+    colorInput.addEventListener("input", () => {
+      if (colorEnable.checked) st.color = colorInput.value;
     });
 
     // Ctrl+クリックで2点以上を選択している場合は、その最小・最大の点を区間の始点・終点にする。
@@ -1923,11 +1994,25 @@
       if (!route || st.start == null || st.end == null) return;
       const fromIdx = Math.min(st.start, st.end);
       const toIdx = Math.max(st.start, st.end);
-      if (fromIdx === toIdx || st.value == null) return;
-      cfg.add(route, fromIdx, toIdx, st.value);
+      // 念のための保険: fromIdx/toIdx は、いまの路線の点数の範囲内であること
+      // （通常は路線切り替え時に resetRangeForms() でリセットされるため起きないはずだが、
+      //  範囲外の値を万一の理由で適用してしまうと、意図しない区間の見た目が変わるため）
+      if (fromIdx === toIdx || (st.lanes == null && st.status == null && st.color == null) || toIdx >= route.points.length) return;
+      if (st.lanes != null) route.laneSegments.push({ id: uid(), fromIdx, toIdx, lanes: st.lanes });
+      if (st.status != null) {
+        if (!Array.isArray(route.statusSegments)) route.statusSegments = [];
+        route.statusSegments.push({ id: uid(), fromIdx, toIdx, status: st.status });
+      }
+      if (st.color != null) {
+        if (!Array.isArray(route.colorSegments)) route.colorSegments = [];
+        route.colorSegments.push({ id: uid(), fromIdx, toIdx, color: st.color });
+      }
       st.start = null;
       st.end = null;
-      st.value = null;
+      st.lanes = null;
+      st.status = null;
+      st.color = null;
+      colorEnable.checked = false;
       render();
     });
 
@@ -1944,7 +2029,10 @@
       reset() {
         st.start = null;
         st.end = null;
-        st.value = null;
+        st.lanes = null;
+        st.status = null;
+        st.color = null;
+        colorEnable.checked = false;
       },
       // 始点/終点ボタンの状態表示、追加ボタンの有効/無効を更新する
       renderForm() {
@@ -1962,19 +2050,49 @@
         } else if (st.start === st.end) {
           summary.textContent = "始点と終点には異なる点を選んでください";
         } else {
-          summary.textContent = `点${Math.min(st.start, st.end) + 1}〜点${Math.max(st.start, st.end) + 1} の区間に適用する${cfg.valueName}を選んでください`;
+          summary.textContent = `点${Math.min(st.start, st.end) + 1}〜点${Math.max(st.start, st.end) + 1} の区間に適用する車線数・状態・色を選んでください（一部だけでもかまいません）`;
         }
-        options.querySelectorAll("button").forEach((btn) => {
-          btn.classList.toggle("active", st.value != null && btn.dataset.value === String(st.value));
+        laneOptionsEl.querySelectorAll("button").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.value === (st.lanes == null ? NONE : String(st.lanes)));
         });
-        apply.disabled = !(st.start != null && st.end != null && st.start !== st.end && st.value != null);
+        statusOptionsEl.querySelectorAll("button").forEach((btn) => {
+          btn.classList.toggle("active", btn.dataset.value === (st.status == null ? NONE : String(st.status)));
+        });
+        colorInput.disabled = !colorEnable.checked;
+        apply.disabled = !(st.start != null && st.end != null && st.start !== st.end && (st.lanes != null || st.status != null || st.color != null));
       },
       renderList() {
         const route = getActiveRoute();
         list.innerHTML = "";
-        const items = route ? cfg.items(route) : [];
+        if (!route) return;
+        // 区間別の車線数・状態を、区間（fromIdx〜toIdx）が同じものどうしでまとめて、1行に表示する
+        // （別々に登録されていても、両端が同じなら1行にする）。
+        const rows = new Map();
+        const rowKey = (fromIdx, toIdx) => `${fromIdx}-${toIdx}`;
+        const rowOf = (fromIdx, toIdx) => {
+          const key = rowKey(fromIdx, toIdx);
+          if (!rows.has(key))
+            rows.set(key, { fromIdx, toIdx, laneId: null, laneText: null, statusId: null, statusText: null, colorId: null, color: null });
+          return rows.get(key);
+        };
+        route.laneSegments.forEach((seg) => {
+          const row = rowOf(seg.fromIdx, seg.toIdx);
+          row.laneId = seg.id;
+          row.laneText = `${seg.lanes}車線`;
+        });
+        (route.statusSegments || []).forEach((seg) => {
+          const row = rowOf(seg.fromIdx, seg.toIdx);
+          row.statusId = seg.id;
+          row.statusText = (STATUSES[seg.status] || STATUSES.inservice).label;
+        });
+        (route.colorSegments || []).forEach((seg) => {
+          const row = rowOf(seg.fromIdx, seg.toIdx);
+          row.colorId = seg.id;
+          row.color = seg.color;
+        });
+        const items = Array.from(rows.values()).sort((a, b) => a.fromIdx - b.fromIdx || a.toIdx - b.toIdx);
         if (items.length === 0) {
-          list.innerHTML = `<div class="empty-msg">${cfg.emptyText}</div>`;
+          list.innerHTML = '<div class="empty-msg">区間ごとの車線数・状態・色の変更は未設定です</div>';
           return;
         }
         // 区間の両端は、施設（IC・JCTなど）があればその名前、なければ「点N」で表す（地図上に点の番号は出ないため）
@@ -1983,17 +2101,21 @@
           return ic && ic.name ? ic.name : `点${idx + 1}`;
         };
         items.forEach((item) => {
+          const text = [item.laneText, item.statusText, item.color ? "色" : null].filter(Boolean).join("・");
+          const swatch = item.color ? `<span class="range-segment-swatch" style="background:${escapeHtml(item.color)}"></span>` : "";
           const div = document.createElement("div");
           div.className = "list-item";
           div.title = `点${item.fromIdx + 1}〜点${item.toIdx + 1}`;
-          div.innerHTML = `<span class="name">${escapeHtml(endLabel(item.fromIdx))}〜${escapeHtml(endLabel(item.toIdx))}: ${escapeHtml(item.text)}</span>`;
+          div.innerHTML = `<span class="name">${swatch}${escapeHtml(endLabel(item.fromIdx))}〜${escapeHtml(endLabel(item.toIdx))}: ${escapeHtml(text)}</span>`;
           const delBtn = document.createElement("button");
           delBtn.className = "btn small danger-outline";
           delBtn.title = "この区間を削除";
           delBtn.textContent = "削除";
           delBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            cfg.remove(route, item.id);
+            if (item.laneId) route.laneSegments = route.laneSegments.filter((s) => s.id !== item.laneId);
+            if (item.statusId) route.statusSegments = (route.statusSegments || []).filter((s) => s.id !== item.statusId);
+            if (item.colorId) route.colorSegments = (route.colorSegments || []).filter((s) => s.id !== item.colorId);
             render();
           });
           const actions = document.createElement("span");
@@ -2018,29 +2140,7 @@
     renderRangeLists();
   }
 
-  // 区間別の車線数
-  createRangeForm({
-    ids: { pickStart: "btn-pick-range-start", pickEnd: "btn-pick-range-end", useSelected: "btn-use-selected-range", summary: "lane-range-summary", options: "lane-range-lanes-segmented", apply: "btn-add-lane-segment", list: "lane-segments-list" },
-    options: LANE_OPTIONS.map((n) => ({ value: n, label: String(n) })),
-    valueName: "車線数",
-    emptyText: "区間ごとの車線数変更は未設定です",
-    add: (route, fromIdx, toIdx, lanes) => route.laneSegments.push({ id: uid(), fromIdx, toIdx, lanes }),
-    items: (route) => route.laneSegments.map((seg) => ({ id: seg.id, fromIdx: seg.fromIdx, toIdx: seg.toIdx, text: `${seg.lanes}車線` })),
-    remove: (route, id) => (route.laneSegments = route.laneSegments.filter((s) => s.id !== id)),
-  });
-  // 区間別の状態（供用中の路線の一部が事業中、など）
-  createRangeForm({
-    ids: { pickStart: "btn-pick-status-start", pickEnd: "btn-pick-status-end", useSelected: "btn-use-selected-status-range", summary: "status-range-summary", options: "status-range-options", apply: "btn-add-status-segment", list: "status-segments-list" },
-    options: Object.entries(STATUSES).map(([key, def]) => ({ value: key, label: def.label })),
-    valueName: "状態",
-    emptyText: "区間ごとの状態は未設定です（路線全体が、上の状態です）",
-    add: (route, fromIdx, toIdx, status) => {
-      if (!Array.isArray(route.statusSegments)) route.statusSegments = [];
-      route.statusSegments.push({ id: uid(), fromIdx, toIdx, status });
-    },
-    items: (route) => (route.statusSegments || []).map((seg) => ({ id: seg.id, fromIdx: seg.fromIdx, toIdx: seg.toIdx, text: (STATUSES[seg.status] || STATUSES.inservice).label })),
-    remove: (route, id) => (route.statusSegments = (route.statusSegments || []).filter((s) => s.id !== id)),
-  });
+  createCombinedRangeForm();
 
   // 点のマーカーのクリック時に呼ばれる。区間選択中であればその点を採用して
   // true を返す（通常の点選択トグルは行わせない）。選択中でなければ false。
@@ -2050,47 +2150,32 @@
     return true;
   }
 
-  function renderPointPanel() {
+  // 「設定」タブの「施設設定」欄（旧「点」タブ・旧「IC・JCTを設定」）。
+  // v1.51.0-beta で、右クリックメニューを廃止し、点を選んでいるときだけ、常設のタブに表示するように変更した。
+  function renderFacilitySettings() {
     const route = getActiveRoute();
-
-    if (!route) {
-      pointPanelEmptyEl.hidden = false;
-      pointPanelBodyEl.hidden = true;
-      pointPanelHintEl.textContent = "路線を選択、または追加してください";
+    if (!route || selectedSet.size === 0) {
+      facilitySettingsSectionEl.hidden = true;
       return;
     }
-    if (route.points.length === 0) {
-      pointPanelEmptyEl.hidden = false;
-      pointPanelBodyEl.hidden = true;
-      pointPanelHintEl.textContent = "地図をクリックして路線を描画してください";
-      return;
-    }
+    facilitySettingsSectionEl.hidden = false;
 
-    pointPanelEmptyEl.hidden = true;
-    pointPanelBodyEl.hidden = false;
     if (selectedSet.size > 1) {
       const nums = Array.from(selectedSet).sort((a, b) => a - b).map((i) => i + 1).join("、");
-      pointPanelHintActiveEl.textContent = `${selectedSet.size}点を選択中（点${nums}）。設定は選択中の点すべてに適用されます`;
-    } else if (selectedPointIndex !== null) {
-      pointPanelHintActiveEl.textContent =
-        `選択中の点: ${selectedPointIndex + 1} / ${route.points.length}（Ctrl+クリックで複数選択）` +
-        (isLockedIdx(route, selectedPointIndex) ? "。ロック中のため移動・削除できません" : "");
+      facilitySettingsHintEl.textContent = `${selectedSet.size}点を選択中（点${nums}）。設定は選択中の点すべてに適用されます`;
     } else {
-      pointPanelHintActiveEl.textContent = `点数: ${route.points.length}（Ctrl+クリックで複数選択）`;
+      facilitySettingsHintEl.textContent =
+        `選択中の点: ${selectedPointIndex + 1} / ${route.points.length}` +
+        (isLockedIdx(route, selectedPointIndex) ? "。ロック中のため移動・削除できません" : "");
     }
-    if (!pointPanelSection) {
-      pointPanelHintActiveEl.textContent += "。点を右クリックすると、開いた設定がここに表示されます";
-    }
-    document.getElementById("point-open-row").hidden = !!pointPanelSection; // 設定を開いていないときだけ、開くボタンを出す
-    document.getElementById("point-section-ic").hidden = pointPanelSection !== "ic";
-    document.getElementById("btn-clear-selection").hidden = selectedSet.size === 0;
 
     // 選択中の点に既にIC/JCTが設定されていれば、編集しやすいようフォームに反映する。
     const targetIdx = selectedPointIndex !== null ? selectedPointIndex : route.points.length - 1;
     const existingIc = route.ics.find((ic) => ic.pointIndex === targetIdx);
     icTypeSelect.value = existingIc ? existingIc.type : "ic";
     icNameInput.value = existingIc ? existingIc.name || "" : "";
-
+    pendingOtherShape = existingIc && existingIc.type === "other" ? otherShapeOf(existingIc) : OTHER_SHAPES[0].key;
+    updateIcShapePicker();
   }
 
   // ---------------------------------------------------------------------
@@ -2137,7 +2222,11 @@
     sheetToggleEl.setAttribute("aria-expanded", String(open));
     sheetToggleLabelEl.textContent = open ? "設定を閉じる" : "設定を開く";
   }
-  sheetToggleEl.addEventListener("click", () => setSheetOpen(!appEl.classList.contains("sheet-open")));
+  sheetToggleEl.addEventListener("click", () => {
+    const opening = !appEl.classList.contains("sheet-open");
+    setSheetOpen(opening);
+    if (opening) keepSelectionAboveSheet(); // 選んでいる点が、開いたシートに隠れないよう地図を動かす
+  });
   // シートが開くと、下のほうの地図が隠れる。選んでいる点が隠れたら、見える所まで地図を動かす
   function keepSelectionAboveSheet() {
     setTimeout(() => {
@@ -2153,35 +2242,23 @@
 
   // ---------------------------------------------------------------------
   // サイドバーのタブ（横向きの下線タブ。一度に、選んだタブの内容だけを表示する）
-  //  編集モード: 路線／見た目／車線／点
+  //  編集モード: 路線／設定（見た目・車線・区間別の設定・施設設定をまとめたタブ。v1.51.0-beta で統合）
   //  路線図モード: 路線／施設
   //  路線を選んでいないときは「路線」だけを表示する。
   // ---------------------------------------------------------------------
-  // 出すタブ（v1.30.0で、中身のないタブは出さないように変更）:
-  //  編集モード: 路線／見た目／車線は常に。「点」は、点を選んでいる（または設定を開いている）ときだけ。
-  //  路線図モード: 路線／施設
   function visibleSidebarTabs(route) {
     if (!route) return ["route"];
     if (currentMode === "diagram") return ["route", "facility"];
-    const tabs = ["route", "look", "lane"];
-    if (selectedSet.size > 0 || pointPanelSection) tabs.push("point");
-    return tabs;
+    return ["route", "look"];
   }
   const sidebarTabsEl = document.getElementById("sidebar-tabs");
   const sidebarSummaryEl = document.getElementById("sidebar-summary");
   const routeDetailPanelEl = document.getElementById("route-detail-panel");
 
-  let renderedSidebarTab = null;
   function renderSidebarTabs() {
     const route = getActiveRoute();
     const tabs = visibleSidebarTabs(route);
     if (!tabs.includes(sidebarTab)) sidebarTab = "route";
-    // 点の設定を開いたとき（右クリックメニューなど）は、スマホでシートが閉じていても、開いて見せる
-    if (sidebarTab === "point" && renderedSidebarTab !== "point" && phoneQuery.matches) {
-      setSheetOpen(true);
-      keepSelectionAboveSheet();
-    }
-    renderedSidebarTab = sidebarTab;
     // タブが「路線」の1つだけのとき（路線がまだないとき）は、タブの帯ごと出さない
     document.getElementById("sidebar-head").hidden = tabs.length <= 1;
     sidebarTabsEl.querySelectorAll(".sidebar-tab").forEach((btn) => {
@@ -2223,9 +2300,6 @@
   sidebarTabsEl.addEventListener("click", (e) => {
     const btn = e.target.closest(".sidebar-tab");
     if (!btn || btn.hidden) return;
-    // 「点」以外のタブに切り替えたら、点の設定（右クリックで開いたもの）は閉じる。
-    // 閉じないと、別のタブを見ている間も、点の設定が開いたままになる
-    if (btn.dataset.tab !== "point") pointPanelSection = null;
     sidebarTab = btn.dataset.tab;
     render();
   });
@@ -2293,7 +2367,7 @@
     scope.innerHTML = `対象の路線: <b>${escapeHtml(routeLabel(route))}</b><br>他の路線の施設は、路線図の見出しをクリックして、その路線を選ぶと設定できます`;
     facilityListEl.appendChild(scope);
     if (data.entries.length === 0) {
-      facilityListEl.insertAdjacentHTML("beforeend", '<div class="empty-msg">施設（IC・JCT・SA/PA）が未設定です。編集モードで点を右クリックして置いてください</div>');
+      facilityListEl.insertAdjacentHTML("beforeend", '<div class="empty-msg">施設（IC・JCT・SA/PAなど）が未設定です。編集モードで点を選び、「設定」タブの「施設設定」で設定してください</div>');
       return;
     }
     data.entries.forEach((fac) => {
@@ -2341,8 +2415,7 @@
       item.querySelector(".fac-goto").addEventListener("click", () => {
         setMode("edit");
         selectOnly(ic.pointIndex);
-        pointPanelSection = "ic";
-        sidebarTab = "point";
+        sidebarTab = "look"; // 施設設定は「設定」タブに、点を選ぶと自動で表示される
         const pt = fac.route.points[ic.pointIndex];
         if (pt) map.panTo([pt.lat, pt.lng]);
         render();
@@ -2682,7 +2755,7 @@
                 ? `<div class="diagram-node-number${e.displayNo.length >= 5 ? " len5" : e.displayNo.length >= 3 ? " len3" : ""}">${escapeHtml(e.displayNo)}</div>`
                 : ""
             }
-            <div class="diagram-node-marker shape-${def.shape}"></div>
+            <div class="diagram-node-marker shape-${icShapeOf(ic)}"></div>
             <div class="diagram-node-info">
               <div class="diagram-node-name">${escapeHtml(ic.name || "(無名)")}</div>
               <div class="diagram-node-sub">${escapeHtml(H ? def.label.replace(/（.*$/, "") : def.label)} ・ ${escapeHtml(distText)}</div>
@@ -2784,13 +2857,20 @@
           for (let q = 0; q < r.points.length - 1; q++) {
             const da = dOf(q);
             const db = dOf(q + 1);
-            pieces.push({ y1: yAt(Math.min(da, db)), y2: yAt(Math.max(da, db)), status: statusOfStep(r, q), lanes: nearestValidLanes(laneOfStep(r, q)), prov: isProvisionalLanes(r, laneOfStep(r, q)) });
+            pieces.push({
+              y1: yAt(Math.min(da, db)),
+              y2: yAt(Math.max(da, db)),
+              status: statusOfStep(r, q),
+              lanes: nearestValidLanes(laneOfStep(r, q)),
+              prov: isProvisionalLanes(r, laneOfStep(r, q)),
+              color: colorOfStep(r, q),
+            });
           }
           pieces.sort((a, b) => a.y1 - b.y1);
           const merged = [];
           pieces.forEach((p) => {
             const lastP = merged[merged.length - 1];
-            if (lastP && lastP.status === p.status && lastP.lanes === p.lanes && lastP.prov === p.prov) lastP.y2 = Math.max(lastP.y2, p.y2);
+            if (lastP && lastP.status === p.status && lastP.lanes === p.lanes && lastP.prov === p.prov && lastP.color === p.color) lastP.y2 = Math.max(lastP.y2, p.y2);
             else merged.push({ ...p });
           });
           merged.forEach((m, q) => {
@@ -2803,8 +2883,9 @@
               const w = diagramLineWidth(m.lanes);
               const len = Math.max(0, m.y2 - m.y1);
               const decor = m.status === "inservice" ? diagramLaneDecorHtml(m.lanes, m.prov, w, H) : ""; // 区分線と暫定の枠は、供用中の区間だけ（地図と同じ）
-              if (H) return `<div class="diagram-line-seg h status-${escapeHtml(m.status)}" style="left:${m.y1}px;width:${len}px;top:${lineY - w / 2}px;height:${w}px;">${decor}</div>`;
-              return `<div class="diagram-line-seg status-${escapeHtml(m.status)}" style="top:${m.y1}px;height:${len}px;left:${33 - w / 2}px;width:${w}px;">${decor}</div>`;
+              const colorStyle = `--diagram-color:${escapeHtml(m.color)};`; // 区間別の色（v1.52.0-beta。未設定なら route.color のまま）
+              if (H) return `<div class="diagram-line-seg h status-${escapeHtml(m.status)}" style="left:${m.y1}px;width:${len}px;top:${lineY - w / 2}px;height:${w}px;${colorStyle}">${decor}</div>`;
+              return `<div class="diagram-line-seg status-${escapeHtml(m.status)}" style="top:${m.y1}px;height:${len}px;left:${33 - w / 2}px;width:${w}px;${colorStyle}">${decor}</div>`;
             })
             .join("");
         }
@@ -3110,6 +3191,8 @@
         c.type = IC_TYPES[ic.type] || ic.type === "half_ic" ? ic.type : "ic";
         c.name = cleanString(ic.name, 100);
         c.labelVisible = !!ic.labelVisible;
+        // 「その他」施設の図形（ic.shape）は、既知の値だけを許す（HTMLのclass属性に、そのまま入るため）
+        if ("shape" in c && !OTHER_SHAPES.some((s) => s.key === c.shape)) delete c.shape;
         if ("id" in c) c.id = cleanString(ic.id, 80) || undefined;
         if ("numText" in c) c.numText = cleanString(ic.numText, 6);
         if ("numMode" in c && !["auto", "custom", "none"].includes(c.numMode)) delete c.numMode;
@@ -3121,6 +3204,7 @@
         .map((s) => ({ ...s, id: cleanString(s.id, 80) || uid(), ...fix(s) }));
     out.laneSegments = segs(r.laneSegments, (s) => ({ lanes: nearestValidLanes(isFiniteNumber(s.lanes) ? s.lanes : 2) }));
     out.statusSegments = segs(r.statusSegments, (s) => ({ status: STATUSES[s.status] ? s.status : "inservice" }));
+    out.colorSegments = segs(r.colorSegments, (s) => ({ color: COLOR_PATTERN.test(s.color) ? s.color : out.color }));
     const bf = r.branchFrom;
     if (bf && typeof bf === "object" && typeof bf.routeId === "string" && typeof bf.icId === "string" && (bf.at === "start" || bf.at === "end")) {
       out.branchFrom = { routeId: cleanString(bf.routeId, 80), icId: cleanString(bf.icId, 80), at: bf.at };
@@ -3156,6 +3240,7 @@
       });
       if (!Array.isArray(r.laneSegments)) r.laneSegments = [];
       if (!Array.isArray(r.statusSegments)) r.statusSegments = []; // 区間別の状態（v1.40.0。それ以前の保存データにはない）
+      if (!Array.isArray(r.colorSegments)) r.colorSegments = []; // 区間別の色（v1.52.0-beta。それ以前の保存データにはない）
       migrateLanesOverride(r);
       // v1.22.0で廃止した「ハーフIC」（type: "half_ic"、halfDirection）は、通常のICに変換する
       (r.ics || []).forEach((ic) => {
@@ -3278,133 +3363,48 @@
   }
 
   // ---------------------------------------------------------------------
-  // 点の右クリックメニュー（点の設定だけを出す。路線の情報・設定は含めない）
-  //   IC・JCT設定 / 点のロック・解除 / 選択の追加・解除 / 点の削除
-  // メニューで開いた設定だけが、サイドバーの「選択点の設定」に表示される。
+  // 選択中の点のツールバー（地図の上に重ねて表示。v1.51.0-beta で、右クリックメニューを廃止した代わりに追加）
+  //   ロック・解除 / 削除 / 選択の解除。施設設定は、サイドバーの「設定」タブに常設する（renderFacilitySettings）
   // ---------------------------------------------------------------------
-  const pointMenuEl = document.createElement("div");
-  pointMenuEl.className = "context-menu";
-  pointMenuEl.hidden = true;
-  pointMenuEl.setAttribute("role", "menu");
-  document.body.appendChild(pointMenuEl);
+  const pointToolbarEl = document.getElementById("point-toolbar");
+  const pointToolbarLabelEl = document.getElementById("point-toolbar-label");
+  const btnTogglePointLock = document.getElementById("btn-toggle-point-lock");
+  const btnDeletePoints = document.getElementById("btn-delete-points");
 
-  function closePointMenu() {
-    pointMenuEl.hidden = true;
-    pointMenuEl.innerHTML = "";
-  }
-
-  document.addEventListener("mousedown", (e) => {
-    if (!pointMenuEl.hidden && !pointMenuEl.contains(e.target)) closePointMenu();
-  });
-  window.addEventListener("blur", closePointMenu);
-  window.addEventListener("resize", closePointMenu);
-  map.on("movestart zoomstart", closePointMenu);
-
-  // サイドバーの点の設定パネルを表示位置までスクロールし、入力欄にフォーカスする。
-  function revealPointSection(focusEl) {
-    document.getElementById("point-panel").scrollIntoView({ block: "nearest", behavior: "smooth" });
-    // スマホでは、入力欄に自動でカーソルを入れない（画面のキーボードが出て、画面を覆ってしまうため）
-    if (focusEl && !phoneQuery.matches) setTimeout(() => focusEl.focus(), 50);
-  }
-
-  function openPointMenu(route, idx, originalEvent) {
-    if (originalEvent) originalEvent.preventDefault();
-    if (currentMode !== "edit") return;
-    // 右クリックした点が選択中の複数点に含まれていれば選択を維持し、
-    // それ以外はその点だけを選択し直す（他の路線のICなら、その路線に切り替える）。
-    if (activeRouteId !== route.id) {
-      activeRouteId = route.id;
-      clearSelection();
+  function renderPointToolbar() {
+    const route = getActiveRoute();
+    if (currentMode !== "edit" || !route || selectedSet.size === 0) {
+      pointToolbarEl.hidden = true;
+      return;
     }
-    if (!(selectedSet.size > 1 && selectedSet.has(idx))) {
-      const sectionBefore = pointPanelSection;
-      selectOnly(idx);
-      pointPanelSection = sectionBefore; // 別の点に切り替えても、開いている設定は維持する
-    }
-    render();
-
-    const multi = selectedSet.size > 1;
-    const targets = multi ? Array.from(selectedSet) : [idx];
+    pointToolbarEl.hidden = false;
+    const targets = Array.from(selectedSet);
+    const multi = targets.length > 1;
+    pointToolbarLabelEl.textContent = multi ? `選択中の${targets.length}点` : `点${targets[0] + 1}`;
     const allLocked = targets.every((i) => isLockedIdx(route, i));
-    // 各点のロックは point.locked。始点・終点のロック（路線設定）だけでロックされている点は、ここでは解除できない。
     const lockedByEnds = targets.every((i) => isEndsLockedIdx(route, i));
-    const anyPointLock = targets.some((i) => route.points[i].locked);
-    const items = [
-      { title: multi ? `選択中の${selectedSet.size}点` : `点${idx + 1}` },
-      {
-        label: "IC・JCTを設定",
-        run: () => {
-          pointPanelSection = "ic";
-          sidebarTab = "point";
-          render();
-          revealPointSection(icNameInput);
-        },
-      },
-      { separator: true },
-      {
-        label: anyPointLock ? (multi ? "選択中の点のロックを解除" : "この点のロックを解除") : multi ? "選択中の点をロック" : "この点をロック",
-        disabled: lockedByEnds && !anyPointLock,
-        note: lockedByEnds && !anyPointLock ? "（「路線」タブでロックを解除）" : "",
-        run: () => {
-          const lockOn = !anyPointLock;
-          targets.forEach((i) => {
-            if (lockOn) route.points[i].locked = true;
-            else delete route.points[i].locked;
-          });
-          render();
-        },
-      },
-      {
-        label: selectedSet.has(idx) && multi ? "この点を選択から外す" : "この点を選択に追加",
-        run: () => {
-          toggleSelect(idx);
-          render();
-        },
-      },
-      { separator: true },
-      {
-        label: multi ? `選択中の${selectedSet.size}点を削除` : "この点を削除",
-        danger: true,
-        disabled: allLocked,
-        note: allLocked ? "（ロック中）" : "",
-        run: () => deleteSelectedPoints(),
-      },
-    ];
-
-    pointMenuEl.innerHTML = "";
-    items.forEach((item) => {
-      if (item.separator) {
-        const hr = document.createElement("div");
-        hr.className = "context-menu-separator";
-        pointMenuEl.appendChild(hr);
-      } else if (item.title) {
-        const t = document.createElement("div");
-        t.className = "context-menu-title";
-        t.textContent = item.title;
-        pointMenuEl.appendChild(t);
-      } else {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.setAttribute("role", "menuitem");
-        btn.className = "context-menu-item" + (item.danger ? " danger" : "");
-        btn.textContent = item.label + (item.note || "");
-        btn.disabled = !!item.disabled;
-        btn.addEventListener("click", () => {
-          closePointMenu();
-          item.run();
-        });
-        pointMenuEl.appendChild(btn);
-      }
-    });
-
-    pointMenuEl.hidden = false;
-    const mw = pointMenuEl.offsetWidth;
-    const mh = pointMenuEl.offsetHeight;
-    const x = Math.min(originalEvent.clientX, window.innerWidth - mw - 8);
-    const y = Math.min(originalEvent.clientY, window.innerHeight - mh - 8);
-    pointMenuEl.style.left = Math.max(4, x) + "px";
-    pointMenuEl.style.top = Math.max(4, y) + "px";
+    const anyPointLock = targets.some((i) => route.points[i] && route.points[i].locked);
+    btnTogglePointLock.textContent = anyPointLock ? "ロック解除" : "ロック";
+    btnTogglePointLock.disabled = lockedByEnds && !anyPointLock;
+    btnTogglePointLock.title = lockedByEnds && !anyPointLock ? "始点・終点のロックは、「路線」タブで解除します" : "";
+    btnDeletePoints.disabled = allLocked;
+    btnDeletePoints.title = allLocked ? "ロック中の点は削除できません" : "";
   }
+
+  btnTogglePointLock.addEventListener("click", () => {
+    const route = getActiveRoute();
+    if (!route) return;
+    const targets = Array.from(selectedSet);
+    const anyPointLock = targets.some((i) => route.points[i] && route.points[i].locked);
+    const lockOn = !anyPointLock;
+    targets.forEach((i) => {
+      if (lockOn) route.points[i].locked = true;
+      else delete route.points[i].locked;
+    });
+    render();
+  });
+
+  btnDeletePoints.addEventListener("click", () => deleteSelectedPoints());
 
   // ---------------------------------------------------------------------
   // キーボードショートカット
@@ -3434,10 +3434,6 @@
       } else if (e.key === "Escape") {
         closeTutorial();
       }
-      return;
-    }
-    if (e.key === "Escape" && !pointMenuEl.hidden) {
-      closePointMenu();
       return;
     }
     if (anyModalOpen()) return;
@@ -3472,15 +3468,6 @@
 
   document.getElementById("btn-undo").addEventListener("click", undo);
   document.getElementById("btn-redo").addEventListener("click", redo);
-
-  // 点の設定を、右クリックメニューを使わずに開くボタン（タッチ操作など、右クリックしにくい環境のため）。
-  // 右クリックメニューの「IC・JCTを設定」と同じ動き
-  document.getElementById("btn-open-ic-section").addEventListener("click", () => {
-    pointPanelSection = "ic";
-    sidebarTab = "point";
-    render();
-    revealPointSection(icNameInput);
-  });
 
   // 見出し（label）と入力欄を関連付ける（見出しを押すと入力欄に移動し、スクリーンリーダーが入力欄の名前を読める）。
   // 入力欄が1つでなく、ボタンの並び（車線数・状態など）のときは、並びのまとまり（group）に見出しの名前を付ける

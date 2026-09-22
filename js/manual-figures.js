@@ -102,7 +102,7 @@
     s += btn(8, 246, 40, 16, "凡例", { size: 9 });
     // サイドバー
     s += `<rect x="330" y="52" width="150" height="218" fill="#f6f7f8"/><line x1="330" y1="52" x2="330" y2="${H}" stroke="#e1e4e8"/>`;
-    ["路線", "見た目", "車線", "点"].forEach((t, i) => {
+    ["路線", "設定"].forEach((t, i) => {
       const x = 338 + i * 34;
       s += f.text(x, 68, t, 9, i === 0 ? PRIMARY : MUTED, 700);
     });

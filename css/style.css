@@ -665,6 +665,12 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 .lane-segment-form .segmented { margin-bottom: 8.8px; }
 .lane-segment-form .btn.small { flex: 1; }
+/* 区間別の設定の「色」（v1.52.0-beta）: チェックボックスで有効化してから、色を選ぶ */
+.range-color-row { display: flex; align-items: center; gap: var(--space-2); }
+.range-color-row .checkbox-field { flex: 1 1 auto; }
+.range-color-row input[type="color"] { width: 44px; height: 33px; padding: 2px; border: 1px solid var(--color-control-border); border-radius: var(--radius-sm); background: var(--color-surface); }
+.range-color-row input[type="color"]:disabled { opacity: 0.5; cursor: not-allowed; }
+.range-segment-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 4.4px; vertical-align: -1px; border: 1px solid var(--color-border-strong); }
 
 /* ==========================================================================
    アコーディオン（<details>/<summary>）
@@ -947,6 +953,12 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   background: #333;
   clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
 }
+/* 「その他」施設で選べる図形（5種類。v1.51.0-beta。既存の丸・ひし形・五角形・四角形と被らない形にする） */
+.diagram-node-marker.shape-triangle { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+.diagram-node-marker.shape-hexagon { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+.diagram-node-marker.shape-star { clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.diagram-node-marker.shape-cross { clip-path: polygon(35% 0%, 65% 0%, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0% 65%, 0% 35%, 35% 35%); }
+.diagram-node-marker.shape-octagon { clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); }
 .diagram-node-info {
   margin-left: 55px;
   padding-left: 24.2px;
@@ -1308,6 +1320,12 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   background: #333;
   clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
 }
+/* 「その他」施設で選べる図形（5種類。v1.51.0-beta。diagram-node-marker と同じ形。地図上のマークは、縁2px・白地のまま） */
+.ic-shape.shape-triangle { clip-path: polygon(50% 0%, 100% 100%, 0% 100%); }
+.ic-shape.shape-hexagon { clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%); }
+.ic-shape.shape-star { clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); }
+.ic-shape.shape-cross { clip-path: polygon(35% 0%, 65% 0%, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0% 65%, 0% 35%, 35% 35%); }
+.ic-shape.shape-octagon { clip-path: polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%); }
 
 .ic-label {
   background: rgba(255,255,255,0.92);
@@ -1350,40 +1368,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 /* ==========================================================================
    複数選択・元に戻す/やり直し まわり
    ========================================================================== */
-.context-menu {
-  position: fixed;
-  z-index: 3000;
-  min-width: 242px;
-  padding: 4.4px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-lg);
-}
-.context-menu-title {
-  padding: 4.4px 11px 6.6px;
-  font-size: 12.1px;
-  font-weight: 700;
-  color: var(--color-text-muted);
-}
-.context-menu-item {
-  display: block;
-  width: 100%;
-  padding: 8.8px 11px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: none;
-  font-size: 13.8px;
-  text-align: left;
-  color: var(--color-text);
-  cursor: pointer;
-}
-.context-menu-item:hover:not(:disabled) { background: var(--color-primary-light); }
-.context-menu-item.danger { color: var(--color-danger); }
-.context-menu-item.danger:hover:not(:disabled) { background: var(--color-danger-light); }
-.context-menu-item:disabled { color: var(--color-text-muted); cursor: not-allowed; }
-.context-menu-item:focus-visible { outline: 2px solid var(--color-primary); }
-.context-menu-separator { height: 1px; margin: 4.4px 0; background: var(--color-border); }
+/* （旧・点の右クリックメニューの .context-menu-* は、v1.51.0-beta で廃止した） */
 
 /* 始点・終点の状態と操作（2行） */
 .endpoint-status {
@@ -1617,6 +1602,28 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 @media (prefers-reduced-motion: reduce) {
   .empty-cta-btn { animation: none; }
+}
+
+/* 選択中の点のツールバー（v1.51.0-beta。右クリックメニューを廃止した代わりに、地図の上に重ねて出す） */
+.point-toolbar {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  z-index: 600; /* 地図（z-index:0）より上。凡例（左下）と対称の右下に置く */
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: calc(100% - 2 * var(--space-3));
+  padding: var(--space-2);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+}
+.point-toolbar-label {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
 }
 
 .legend-widget {
@@ -1926,6 +1933,15 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
     bottom: calc(var(--sheet-h) + env(safe-area-inset-bottom, 0px) + var(--space-2));
     max-width: none;
     max-height: none;
+  }
+  /* 選択中の点のツールバーは、右寄せのまま（凡例は左寄せなので、横には重ならない） */
+  .point-toolbar {
+    position: fixed;
+    right: var(--space-2);
+    bottom: calc(var(--sheet-h) + env(safe-area-inset-bottom, 0px) + var(--space-2));
+    max-width: calc(100% - 2 * var(--space-2));
+    flex-wrap: wrap;
+    justify-content: flex-end;
   }
 
   /* --- サイドバー（シート） --- */

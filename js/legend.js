@@ -153,6 +153,11 @@
     if (type === "toll") {
       return `<rect x="${cx - r + 1}" y="${cy - r + 1}" width="${size - 2}" height="${size - 2}" fill="#fff" stroke="#333" stroke-width="2"/>`;
     }
+    if (type === "other") {
+      // 「その他」施設は、5種類の図形から選べる（ここでは代表として三角を示す）
+      const pts = [[0.5, 0], [1, 1], [0, 1]].map(([px, py]) => `${cx - r + px * size},${cy - r + py * size}`).join(" ");
+      return `<polygon points="${pts}" fill="#fff" stroke="#333" stroke-width="2"/>`;
+    }
     return `<circle cx="${cx}" cy="${cy}" r="${r - 1}" fill="#fff" stroke="#333" stroke-width="2"/>`;
   }
 
@@ -290,7 +295,7 @@
     );
 
     html.push(
-      `<p class="manual-note">地図に描かれる道路の見た目を、実際と同じ規則で並べた凡例です。図は<b>実際の画面の約${LEGEND_ZOOM}倍の大きさ</b>で表示しています。<b>路線の色は、路線ごとに自由に変えられます</b>（図の色は一例です。「路線種別の色」も参照）。</p>`
+      `<p class="manual-note">地図に描かれる道路の見た目を、実際と同じ規則で並べた凡例です。図は<b>実際の画面の約${LEGEND_ZOOM}倍の大きさ</b>で表示しています。<b>路線の色は、路線ごとに、また区間ごとに自由に変えられます</b>（図の色は一例です。「路線種別の色」も参照）。</p>`
     );
 
     // 1. 状態
@@ -395,13 +400,14 @@
     );
 
     // 8. IC・JCT
-    const labelName = { ic: "○○IC", jct: "××JCT", sapa: "●●PA", toll: "△△本線料金所", entrance: "交差点" };
+    const labelName = { ic: "○○IC", jct: "××JCT", sapa: "●●PA", toll: "△△本線料金所", entrance: "交差点", other: "○○施設" };
     const icDesc = {
       ic: "インターチェンジ。",
       jct: "ジャンクション（道路どうしの分岐・合流）。",
       sapa: "サービスエリア・パーキングエリア。",
       toll: "本線上の料金所（四角）。路線図では、施設番号は付きません（番号を付けるのはIC・JCTだけです）。",
       entrance: "一般道との出入口・交差点（小さい○）。",
+      other: "上記に当てはまらない、自由な施設。地図に描くときの図形を、5種類（三角・六角形・星・十字・八角形）から選べます。路線図では、施設番号は付きません。",
     };
     html.push(
       section(
