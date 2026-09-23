@@ -716,6 +716,36 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 
 .accordion-body { padding-top: var(--space-3); }
 
+/* JCT・ICでの分岐欄（サイドバーの「路線」。折りたたみ式。v1.53.2-beta）。
+   .panel の見た目（カード）のまま、summary をヘッダー代わりにする */
+#link-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.8px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+#link-panel > summary::-webkit-details-marker { display: none; }
+#link-panel > summary::after {
+  content: "";
+  width: 7.7px;
+  height: 7.7px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--transition-fast);
+  margin-left: auto;
+  flex: none;
+}
+#link-panel[open] > summary { margin-bottom: var(--space-2); }
+#link-panel[open] > summary::after { transform: rotate(45deg); }
+
 /* ==========================================================================
    路線図（模式図）
    ========================================================================== */
@@ -1375,7 +1405,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
    ========================================================================== */
 /* （旧・点の右クリックメニューの .context-menu-* は、v1.51.0-beta で廃止した） */
 
-/* 始点・終点の状態と操作（2行） */
+/* 終点の状態と操作（v1.53.2-betaで、始点の行は廃止した。始点は他の点と同様、個別ロックだけで扱う） */
 .endpoint-status {
   display: flex;
   flex-direction: column;
@@ -1397,7 +1427,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   font-weight: 700;
   text-align: center;
 }
-.ep-label.ep-start { background: var(--color-primary); }
 .ep-label.ep-end { background: #c53f00; } /* 白い文字が 4.5:1 以上 */
 .ep-state { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--color-text-muted); }
 .ep-state.locked { color: var(--color-text); font-weight: 600; }
@@ -1888,7 +1917,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 .facility-controls .checkbox-field { flex: 1 1 auto; }
 .facility-controls .fac-goto { flex: none; }
 
-/* 「路線」タブの「JCTでの分岐」欄 */
+/* サイドバーの「JCT・ICでの分岐」欄（折りたたみ） */
 .link-branch-now { margin: 0 0 var(--space-2); font-size: 13px; line-height: 1.6; }
 .link-at-note { margin: 4px 0 0; }
 .link-sub { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }

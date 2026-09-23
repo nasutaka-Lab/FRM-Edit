@@ -188,7 +188,7 @@
     return currentMap.routes.find((r) => r.id === activeRouteId) || null;
   }
 
-  // サイドバーで、いま開いているタブ（"route" / "look" / "facility"）。
+  // サイドバーで、いま開いているタブ（"route" / "facility"。編集モードは "route" 固定）。
   let sidebarTab = "route";
 
   function clearSelection() {
@@ -214,13 +214,14 @@
   }
 
   // 点のロック。ロック中の点は移動・削除ができない。次の2種類がある。
-  //  - 各点のロック（point.locked。点の右クリックメニューで切り替える）
-  //  - 始点・終点のロック。始点（route.startLocked）は置くと自動でロックされ、終点（route.endLocked）は
-  //    「終点を決定」（終点のスイッチをオン）にしたときにロックされる。どちらも路線パネルのスイッチで解除・再ロックできる。
+  //  - 各点のロック（point.locked。地図上の「選択中の点」ツールバーで切り替える）
+  //  - 終点のロック（route.endLocked）。「終点を決定」（終点のスイッチをオン）にしたときにロックされる。
+  //    路線パネルのスイッチで解除・再ロックできる。
+  //    始点は、v1.53.2-betaで自動ロックを廃止し、他の点と同様に扱う（個別にロックしたいときは、
+  //    地図上の「選択中の点」ツールバーでロックする）。
   // 終点は点が2つ以上のときだけ存在する（1点だけのときは始点のみ）。
   function isEndsLockedIdx(route, idx) {
     const n = route.points.length;
-    if (idx === 0 && route.startLocked) return true;
     return idx === n - 1 && n >= 2 && !!route.endLocked;
   }
 
@@ -924,8 +925,8 @@
     renderMapLayers();
     renderRouteList();
     renderRouteProps();
-    renderLinkPanel(); // 「路線」タブの「JCT・ICでの分岐」欄
-    renderFacilitySettings(); // 「設定」タブの「施設設定」欄（点を選んでいるときだけ）
+    renderLinkPanel(); // サイドバーの「JCT・ICでの分岐」欄（折りたたみ）
+    renderFacilitySettings(); // サイドバーの「施設設定」欄（点を選んでいるときだけ）
     renderPointToolbar(); // 地図に重ねる「選択中の点」ツールバー
     renderMapHint();
     if (currentMode === "diagram") renderRouteDiagram();
@@ -1301,7 +1302,7 @@
     if (!route) return;
     // 終点が決定（ロック）済みのときは、末尾への点の追加はできない（解除すると追加できる）。
     if (route.endLocked && route.points.length >= 2) {
-      toast("終点が決定済みです。「路線」タブで終点のロックを解除すると、末尾に点を追加できます", "error");
+      toast("終点が決定済みです。サイドバーで終点のロックを解除すると、末尾に点を追加できます", "error");
       return;
     }
     route.points.push({ lat: e.latlng.lat, lng: e.latlng.lng });
@@ -1380,7 +1381,6 @@
       color: CATEGORIES.national.color,
       lanes: lanes,
       provisional: false,
-      startLocked: true, // 始点は、置くと自動でロックする（動かすには、路線パネルで解除する）
       endLocked: false, // 終点は、「終点を決定」を押すまでロックしない（描画中は末尾に点を追加できる）
       weight: laneWeight(lanes),
       opacity: 1,
@@ -1407,7 +1407,8 @@
     if (route.branchFrom) route.branchFrom.at = route.branchFrom.at === "end" ? "start" : "end"; // 分岐している端も入れ替わる
     const n = route.points.length;
     route.points.reverse();
-    [route.startLocked, route.endLocked] = [!!route.endLocked, !!route.startLocked]; // ロックも始点・終点と一緒に入れ替える
+    // endLocked は「この路線の描画が完了しているか」を表す路線単位の状態なので、向き反転では変えない
+    // （各点の locked は points 配列と一緒に反転されるので、そのまま追従する）
     route.ics.forEach((ic) => {
       ic.pointIndex = n - 1 - ic.pointIndex;
     });
@@ -1435,14 +1436,18 @@
   });
 
   // ---------------------------------------------------------------------
-  // サイドバー: JCT・ICでの分岐（「路線」タブの「JCT・ICでの分岐」欄）
+  // サイドバー: JCT・ICでの分岐（「JCT・ICでの分岐」欄。折りたたみ式。v1.53.2-beta）
   // 分岐する路線の端の点を、分岐元の施設（JCT・IC）の位置に合わせて重ねる。
   // ---------------------------------------------------------------------
   const linkPanelEl = document.getElementById("link-panel");
+  const linkSummaryEl = document.getElementById("link-summary");
   const linkBodyEl = document.getElementById("link-body");
   // 分岐の欄の状態。fac: 分岐元の施設（"路線のid#点の番号"）、at: この路線の分岐する端、
   // atAuto: 端を、施設に近い端に自動で決めているか、newFac: 新しい路線を分岐させる施設（この路線の点の番号）、focus: 地図に赤い輪で示す施設（"fac" / "new"）
   let linkUi = { fac: "", at: "start", atAuto: true, newFac: "", focus: "fac" };
+  // JCT・ICでの分岐欄は折りたたみ式（v1.53.2-beta）。路線を切り替えた直後だけ、分岐の有無で開閉の既定を決め、
+  // そのあとはユーザーが自分で開閉した状態を保つ（renderLinkPanel は編集のたびに呼ばれるため、毎回は開閉し直さない）
+  let linkPanelOpenForRoute = null;
   // 選んだ施設の場所を、地図に赤い輪で示すレイヤー
   const branchPreviewLayer = L.layerGroup().addTo(map);
 
@@ -1527,6 +1532,13 @@
     let ringTarget = null; // 赤い輪で示す施設 { route, ic }
     const bf = route.branchFrom;
     const trunkNow = bf ? routeById(bf.routeId) : null;
+    const kids = currentMap.routes.filter((r) => r.branchFrom && r.branchFrom.routeId === route.id);
+    const hasBranch = !!(bf && trunkNow) || kids.length > 0;
+    if (linkPanelOpenForRoute !== route.id) {
+      linkPanelOpenForRoute = route.id;
+      linkPanelEl.open = hasBranch;
+    }
+    linkSummaryEl.innerHTML = `JCT・ICでの分岐<span class="acc-summary">${hasBranch ? "分岐あり" : ""}</span>`;
     if (bf && trunkNow) {
       // すでに分岐しているとき
       const ic = icById(trunkNow, bf.icId);
@@ -1570,7 +1582,7 @@
           "</div>" +
           '<button id="btn-set-branch" type="button" class="btn primary small full">この路線をこの施設から分岐させる</button>';
       } else {
-        html += '<p class="hint-text">分岐元にできる施設がありません。別の路線の点を選び、「設定」タブの「施設設定」で、施設を設定してください。</p>';
+        html += '<p class="hint-text">分岐元にできる施設がありません。別の路線の点を選ぶと開く「施設設定」で、施設を設定してください。</p>';
       }
     }
 
@@ -1589,7 +1601,6 @@
         '<button id="btn-new-branch" type="button" class="btn ghost small full">この施設から、新しい路線を作る</button></div>';
     }
 
-    const kids = currentMap.routes.filter((r) => r.branchFrom && r.branchFrom.routeId === route.id);
     if (kids.length) {
       html +=
         '<div class="link-kids"><div class="muted">この路線から分岐している路線</div>' +
@@ -1654,7 +1665,7 @@
         const p = ic && route.points[ic.pointIndex];
         if (!p) return;
         const child = newRouteObject();
-        child.points = [{ lat: p.lat, lng: p.lng }]; // 始点は、分岐元の施設の位置（置いた点は、自動でロックされる）
+        child.points = [{ lat: p.lat, lng: p.lng }]; // 始点は、分岐元の施設の位置
         child.branchFrom = { routeId: route.id, icId: ensureIcId(ic), at: "start" };
         currentMap.routes.push(child);
         activeRouteId = child.id;
@@ -1787,16 +1798,9 @@
     });
   });
 
-  // 始点・終点の手順（①始点を置く → ②路線を順に描く → ③終点を決定）と、ロックの切替。
-  const lockStartBtn = document.getElementById("btn-lock-start");
+  // 始点を置く → 路線を順に描く → 終点を決定、の流れのうち、「終点を決定」のロックの切替。
+  // （始点は、v1.53.2-betaで自動ロックを廃止したので、専用のスイッチはない）
   const decideEndBtn = document.getElementById("btn-decide-end");
-
-  lockStartBtn.addEventListener("click", () => {
-    const route = getActiveRoute();
-    if (!route) return;
-    route.startLocked = !route.startLocked;
-    render();
-  });
 
   decideEndBtn.addEventListener("click", () => {
     const route = getActiveRoute();
@@ -1825,20 +1829,16 @@
 
   function renderLockControls(route) {
     const n = route.points.length;
-    const startState = n === 0 ? "未設定" : route.startLocked ? "ロック中" : "ロック解除中";
     const endState = n < 2 ? "未設定" : route.endLocked ? "決定済み（ロック中）" : "未決定（描画中）";
     const setState = (id, text, cls) => {
       const el = document.getElementById(id);
       el.textContent = text;
       el.className = "ep-state" + (cls ? " " + cls : "");
     };
-    setState("ep-start-state", startState, route.startLocked && n > 0 ? "locked" : "");
     setState("ep-end-state", endState, route.endLocked && n >= 2 ? "locked" : n >= 2 ? "pending" : "");
-    // オン＝ロック中（始点）／決定済み（終点）。トグルスイッチ（role="switch"）で切り替える
-    lockStartBtn.setAttribute("aria-checked", String(!!route.startLocked));
+    // オン＝決定済み。トグルスイッチ（role="switch"）で切り替える
     decideEndBtn.setAttribute("aria-checked", String(!!route.endLocked));
     decideEndBtn.disabled = !route.endLocked && n < 2; // 点が2つ未満のときは、終点を決定できない
-    lockStartBtn.title = route.startLocked ? "オフにすると、始点のロックを解除します" : "オンにすると、始点をロックします";
     decideEndBtn.title = route.endLocked ? "オフにすると、終点のロックを解除します" : n < 2 ? "点を2つ以上置くと、終点を決定できます" : "オンにすると、最後の点を終点として決定（ロック）します";
   }
 
@@ -2036,7 +2036,7 @@
   }
 
   // ---------------------------------------------------------------------
-  // サイドバー: 点・施設設定（旧「点」タブ。v1.51.0-beta で、「設定」タブに統合した）
+  // サイドバー: 点・施設設定（旧「点」タブ。v1.51.0-beta で「設定」タブに統合、v1.53.2-beta でさらにサイドバー本体に統合した）
   // ---------------------------------------------------------------------
   const facilitySettingsSectionEl = document.getElementById("facility-settings-section");
   const facilitySettingsHintEl = document.getElementById("facility-settings-hint");
@@ -2245,7 +2245,7 @@
     });
   }
 
-  // 「設定」タブの「施設設定」欄（旧「点」タブ・旧「IC・JCTを設定」）。
+  // サイドバーの「施設設定」欄（旧「点」タブ・旧「IC・JCTを設定」）。
   // v1.51.0-beta で、右クリックメニューを廃止し、点を選んでいるときだけ、常設のタブに表示するように変更した。
   function renderFacilitySettings() {
     const route = getActiveRoute();
@@ -2344,11 +2344,12 @@
   function visibleSidebarTabs(route) {
     if (!route) return ["route"];
     if (currentMode === "diagram") return ["route", "facility"];
-    return ["route", "look"];
+    return ["route"]; // 編集モードは、v1.53.2-betaで「路線」「設定」タブを1つに統合した（タブが1つだけなので帯ごと出さない）
   }
   const sidebarTabsEl = document.getElementById("sidebar-tabs");
   const sidebarSummaryEl = document.getElementById("sidebar-summary");
   const routeDetailPanelEl = document.getElementById("route-detail-panel");
+  const routeSettingsEl = document.getElementById("route-settings");
 
   function renderSidebarTabs() {
     const route = getActiveRoute();
@@ -2371,7 +2372,8 @@
       pane.setAttribute("role", "tabpanel");
       pane.setAttribute("aria-labelledby", "sidebar-tab-" + pane.dataset.pane);
     });
-    routeDetailPanelEl.hidden = currentMode !== "edit" || !route; // 路線の名前・向き反転・削除・始点終点は、編集モードで路線を選んでいるときだけ
+    routeDetailPanelEl.hidden = currentMode !== "edit" || !route; // 路線の名前・向き反転・削除・終点の状態は、編集モードで路線を選んでいるときだけ
+    routeSettingsEl.hidden = currentMode !== "edit" || !route; // 見た目・車線・区間別の設定・施設設定も同様
     sidebarSummaryEl.hidden = !(route && currentMode === "edit");
   }
 
@@ -2462,7 +2464,7 @@
     scope.innerHTML = `対象の路線: <b>${escapeHtml(routeLabel(route))}</b><br>他の路線の施設は、路線図の見出しをクリックして、その路線を選ぶと設定できます`;
     facilityListEl.appendChild(scope);
     if (data.entries.length === 0) {
-      facilityListEl.insertAdjacentHTML("beforeend", '<div class="empty-msg">施設（IC・JCT・SA/PAなど）が未設定です。編集モードで点を選び、「設定」タブの「施設設定」で設定してください</div>');
+      facilityListEl.insertAdjacentHTML("beforeend", '<div class="empty-msg">施設（IC・JCT・SA/PAなど）が未設定です。編集モードで点を選ぶと開く「施設設定」で設定してください</div>');
       return;
     }
     data.entries.forEach((fac) => {
@@ -2510,7 +2512,7 @@
       item.querySelector(".fac-goto").addEventListener("click", () => {
         setMode("edit");
         selectOnly(ic.pointIndex);
-        sidebarTab = "look"; // 施設設定は「設定」タブに、点を選ぶと自動で表示される
+        sidebarTab = "route"; // 施設設定は、点を選ぶとサイドバーに自動で表示される
         const pt = fac.route.points[ic.pointIndex];
         if (pt) map.panTo([pt.lat, pt.lng]);
         render();
@@ -3385,17 +3387,16 @@
         if (ic.type === "half_ic") ic.type = "ic";
         delete ic.halfDirection;
       });
-      // v1.5.0〜v1.12.0 の lockEnds（始点・終点をまとめてロック）を、始点・終点それぞれのロックへ変換する
+      // v1.5.0〜v1.12.0 の lockEnds（始点・終点をまとめてロック）を、終点のロックへ変換する
       if (r.lockEnds !== undefined) {
-        r.startLocked = !!r.lockEnds;
         r.endLocked = !!r.lockEnds;
         delete r.lockEnds;
       }
-      // 始点・終点のロックが未定義の保存データは、置いてある点を「決定済み」として扱う。
+      // 終点のロックが未定義の保存データは、置いてある点を「決定済み」として扱う。
       // 終点が未決定のままだと、地図の何もない所をクリックしただけで、路線の末尾に点が追加されてしまうため。
       // 明示的に未決定（false）で保存された路線は、そのまま（描き続けられる）
-      if (r.startLocked === undefined) r.startLocked = r.points.length > 0;
       if (r.endLocked === undefined) r.endLocked = r.points.length >= 2;
+      delete r.startLocked; // v1.53.2-betaで、始点の自動ロックを廃止した（保存データに残っていても無視する）
     });
     mapNameInput.value = currentMap.name || "";
     activeRouteId = currentMap.routes.length > 0 ? currentMap.routes[0].id : null;
@@ -3502,7 +3503,7 @@
 
   // ---------------------------------------------------------------------
   // 選択中の点のツールバー（地図の上に重ねて表示。v1.51.0-beta で、右クリックメニューを廃止した代わりに追加）
-  //   ロック・解除 / 削除 / 選択の解除。施設設定は、サイドバーの「設定」タブに常設する（renderFacilitySettings）
+  //   ロック・解除 / 削除 / 選択の解除。施設設定は、サイドバーに常設する（renderFacilitySettings）
   // ---------------------------------------------------------------------
   const pointToolbarEl = document.getElementById("point-toolbar");
   const pointToolbarLabelEl = document.getElementById("point-toolbar-label");
@@ -3524,7 +3525,7 @@
     const anyPointLock = targets.some((i) => route.points[i] && route.points[i].locked);
     btnTogglePointLock.textContent = anyPointLock ? "ロック解除" : "ロック";
     btnTogglePointLock.disabled = lockedByEnds && !anyPointLock;
-    btnTogglePointLock.title = lockedByEnds && !anyPointLock ? "始点・終点のロックは、「路線」タブで解除します" : "";
+    btnTogglePointLock.title = lockedByEnds && !anyPointLock ? "終点のロックは、サイドバーで解除します" : "";
     btnDeletePoints.disabled = allLocked;
     btnDeletePoints.title = allLocked ? "ロック中の点は削除できません" : "";
   }
