@@ -194,10 +194,11 @@
     out += `<circle cx="${trackX}" cy="226" r="6.6" fill="#5b6270"/>` + text(trackX + 16, 231, "終点", 13.2, "#5b6270", 700);
     shapes.forEach((type, i) => {
       const y = 62 + i * 56;
-      // 施設番号を付けるのは IC・JCT だけ（SA・PAには付けない）
-      if (type !== "sapa") out += `<circle cx="20" cy="${y}" r="13.3" fill="#fff" stroke="${color}" stroke-width="2"/>` + text(20, y + 4.2, String(i + 1), 12.1, color, 700, "middle");
+      // 施設番号を付けるのは IC・JCT だけ（SA・PAには付けない。縁はv1.55.0-betaで10%太くした）
+      if (type !== "sapa") out += `<circle cx="20" cy="${y}" r="13.3" fill="#fff" stroke="${color}" stroke-width="2.2"/>` + text(20, y + 4.2, String(i + 1), 12.1, color, 700, "middle");
+      // 施設のマーク自体は、v1.55.0-betaで20%大きくした
       if (type === "sapa") {
-        const s = 15.4;
+        const s = 18.5;
         const pts = [
           [0.5, 0],
           [1, 0.38],
@@ -209,9 +210,9 @@
           .join(" ");
         out += `<polygon points="${pts}" fill="#333"/>`;
       } else if (type === "jct") {
-        out += `<rect x="${trackX - 5.2}" y="${y - 5.2}" width="10.4" height="10.4" fill="#fff" stroke="#333" stroke-width="2.5" transform="rotate(45 ${trackX} ${y})"/>`;
+        out += `<rect x="${trackX - 6.2}" y="${y - 6.2}" width="12.4" height="12.4" fill="#fff" stroke="#333" stroke-width="2.5" transform="rotate(45 ${trackX} ${y})"/>`;
       } else {
-        out += `<circle cx="${trackX}" cy="${y}" r="6.4" fill="#fff" stroke="#333" stroke-width="2.5"/>`;
+        out += `<circle cx="${trackX}" cy="${y}" r="7.7" fill="#fff" stroke="#333" stroke-width="2.5"/>`;
       }
       out += text(trackX + 30, y - 1, names[i][0], 13.2, "#1f2328", 700) + text(trackX + 30, y + 15, names[i][1], 12.1, "#5b6270", 400);
     });
