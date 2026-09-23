@@ -32,12 +32,18 @@
     return nearestValidLanes(lanes) * LANE_WIDTH_PX;
   }
 
+  // 地図で、車線数（太さ）が変わる境界につくる「すぼまり区間」の継ぎ目（v1.53.0-beta。ユーザー指定）。
+  // 長さの目安（m。区間が短いときは、区間の4割までに抑える）と、階段状に近似する分割数。
+  const LANE_TAPER_METERS = 30;
+  const LANE_TAPER_STEPS = 8;
+
   // 区間別車線数: route.laneSegments = [{ id, fromIdx, toIdx, lanes }, ...]
   // 区間別の状態:  route.statusSegments = [{ id, fromIdx, toIdx, status }, ...]（v1.40.0）
   // 区間別の色:    route.colorSegments = [{ id, fromIdx, toIdx, color }, ...]（v1.52.0-beta。ユーザー指定）
+  // 区間別の供用形態: route.provisionalSegments = [{ id, fromIdx, toIdx, provisional }, ...]（v1.53.0-beta。ユーザー指定）
   // 「始点」「終点」の2点を選んで指定した区間（点 fromIdx から点 toIdx までの間）だけ、基本の値
-  // （route.lanes / route.status / route.color）を上書きする。複数区間が重なる場合は、後から追加したものを優先する
-  // （配列の後ろほど優先）。値は、点 k から点 k+1 までの区間（ステップ）ごとに決める。
+  // （route.lanes / route.status / route.color / route.provisional）を上書きする。複数区間が重なる場合は、
+  // 後から追加したものを優先する（配列の後ろほど優先）。値は、点 k から点 k+1 までの区間（ステップ）ごとに決める。
   function segmentValueOfStep(segments, k, key, fallback) {
     const list = segments || [];
     for (let i = list.length - 1; i >= 0; i--) {
@@ -48,11 +54,18 @@
   const laneOfStep = (route, k) => segmentValueOfStep(route.laneSegments, k, "lanes", route.lanes);
   const statusOfStep = (route, k) => segmentValueOfStep(route.statusSegments, k, "status", route.status || "inservice");
   const colorOfStep = (route, k) => segmentValueOfStep(route.colorSegments, k, "color", route.color);
+  // 区間別の供用形態は、明示的に設定されていれば、それを使う。設定されていなければ、これまでどおり
+  // 「路線全体が暫定で、かつ、この区間の車線数が基本の車線数と同じ」ときだけ暫定として扱う（v1.45.0からの規則を維持）。
+  function provisionalOfStep(route, k) {
+    const explicit = segmentValueOfStep(route.provisionalSegments, k, "provisional", undefined);
+    if (explicit !== undefined) return explicit;
+    return !!route.provisional && nearestValidLanes(laneOfStep(route, k)) === nearestValidLanes(route.lanes);
+  }
   // 区間別の設定のリスト（点の追加・削除・向き反転で、インデックスをそろえて直すときに使う）
-  const segmentLists = (route) => [route.laneSegments, route.statusSegments, route.colorSegments].filter(Array.isArray);
+  const segmentLists = (route) => [route.laneSegments, route.statusSegments, route.colorSegments, route.provisionalSegments].filter(Array.isArray);
 
-  // route.points（PI）を「車線数・状態・色がすべて同じ区間が続く区間」に分割する。
-  // 戻り値: [{ startIdx, endIdx, lanes, status, color }, ...]（endIdxは次区間のstartIdxと共有）
+  // route.points（PI）を「車線数・状態・色・供用形態がすべて同じ区間が続く区間」に分割する。
+  // 戻り値: [{ startIdx, endIdx, lanes, status, color, provisional }, ...]（endIdxは次区間のstartIdxと共有）
   function buildLaneRanges(route) {
     const pts = route.points;
     if (pts.length < 2) return [];
@@ -61,19 +74,22 @@
     let rangeLanes = laneOfStep(route, 0);
     let rangeStatus = statusOfStep(route, 0);
     let rangeColor = colorOfStep(route, 0);
+    let rangeProv = provisionalOfStep(route, 0);
     for (let k = 1; k < pts.length - 1; k++) {
       const lanesHere = laneOfStep(route, k);
       const statusHere = statusOfStep(route, k);
       const colorHere = colorOfStep(route, k);
-      if (lanesHere !== rangeLanes || statusHere !== rangeStatus || colorHere !== rangeColor) {
-        ranges.push({ startIdx: rangeStart, endIdx: k, lanes: rangeLanes, status: rangeStatus, color: rangeColor });
+      const provHere = provisionalOfStep(route, k);
+      if (lanesHere !== rangeLanes || statusHere !== rangeStatus || colorHere !== rangeColor || provHere !== rangeProv) {
+        ranges.push({ startIdx: rangeStart, endIdx: k, lanes: rangeLanes, status: rangeStatus, color: rangeColor, provisional: rangeProv });
         rangeStart = k;
         rangeLanes = lanesHere;
         rangeStatus = statusHere;
         rangeColor = colorHere;
+        rangeProv = provHere;
       }
     }
-    ranges.push({ startIdx: rangeStart, endIdx: pts.length - 1, lanes: rangeLanes, status: rangeStatus, color: rangeColor });
+    ranges.push({ startIdx: rangeStart, endIdx: pts.length - 1, lanes: rangeLanes, status: rangeStatus, color: rangeColor, provisional: rangeProv });
     return ranges;
   }
 
@@ -357,7 +373,6 @@
       activeRouteId = currentMap.routes.length ? currentMap.routes[0].id : null;
     }
     clearSelection();
-    rangePicking = null;
     lastHistoryCoalesced = false;
     render();
     updateHistoryButtons();
@@ -806,7 +821,14 @@
     const segments = routeLineRefs.get(route.id);
     if (!segments) return;
     segments.forEach((seg) => {
+      if (seg.taperK != null) {
+        // 車線数が変わる境界の継ぎ目（すぼまり区間）。ドラッグ中も、隣り合う2点から作り直す
+        updateLaneTaper(route, seg);
+        return;
+      }
       const latlngs = buildRenderedLatLngsRange(route, seg.startIdx, seg.endIdx);
+      if (seg.taperEndIdx != null) latlngs[latlngs.length - 1] = laneTaperLatLng(route, seg.taperEndIdx, -1);
+      if (seg.taperStartIdx != null) latlngs[0] = laneTaperLatLng(route, seg.taperStartIdx, 1);
       seg.line.setLatLngs(latlngs);
       seg.dividers.forEach((d) => d.setLatLngs(latlngs));
     });
@@ -815,6 +837,69 @@
   // route.points の [startIdx, endIdx] 区間の、描画用の緯度経度列（点を、直線で結ぶ）
   function buildRenderedLatLngsRange(route, startIdx, endIdx) {
     return route.points.slice(startIdx, endIdx + 1).map((p) => [p.lat, p.lng]);
+  }
+
+  // 車線数が変わる境界（点 k）の、継ぎ目（すぼまり区間）の端になる地点。
+  // dir=-1: k の手前（k-1〜k の間）／dir=+1: k の先（k〜k+1 の間）。隣り合う2点だけで求めるので、
+  // ドラッグ中の再計算も軽い（v1.53.0-beta。ユーザー指定〔地図の「案B」〕）。
+  function laneTaperLatLng(route, k, dir) {
+    const b = route.points[k];
+    const other = route.points[k + dir];
+    const segLen = distanceMeters(b, other);
+    if (!(segLen > 0)) return [b.lat, b.lng];
+    const cut = Math.min(LANE_TAPER_METERS, segLen * 0.4); // 区間が短いときは、区間の4割までに抑える
+    const frac = cut / segLen;
+    return [b.lat + (other.lat - b.lat) * frac, b.lng + (other.lng - b.lng) * frac];
+  }
+
+  // route の区間（buildLaneRanges() の戻り値）のうち、車線数（太さ）が変わる境界の一覧。
+  // 継ぎ目（すぼまり区間）を作る場所（{ k: 境界の点index, wA, wB: 前後の太さ, colorA, colorB: 前後の色 }）。
+  function laneTaperBoundaries(ranges) {
+    const list = [];
+    for (let i = 0; i < ranges.length - 1; i++) {
+      const wA = laneWeight(ranges[i].lanes);
+      const wB = laneWeight(ranges[i + 1].lanes);
+      if (wA !== wB) list.push({ k: ranges[i].endIdx, wA, wB, colorA: ranges[i].color, colorB: ranges[i + 1].color });
+    }
+    return list;
+  }
+
+  // 継ぎ目（すぼまり区間）を、太さが段階的に変わる短いポリラインを並べて描く（L.polyline の weight は
+  // 1本につき一定のため、細かく分けて「階段状」に近似する。LANE_TAPER_STEPS を増やすほどなめらかになる）。
+  function drawLaneTaper(route, k) {
+    const before = laneTaperLatLng(route, k, -1);
+    const after = laneTaperLatLng(route, k, 1);
+    const lines = [];
+    for (let i = 0; i < LANE_TAPER_STEPS; i++) {
+      const line = L.polyline([before, after], { interactive: false, lineCap: "butt" });
+      line.addTo(routesLayer);
+      lines.push(line);
+    }
+    const seg = { taperK: k, lines };
+    updateLaneTaper(route, seg);
+    return seg;
+  }
+
+  // 継ぎ目（すぼまり区間）の位置・太さ・色を、いまの route.points（ドラッグ中も）に合わせて更新する
+  function updateLaneTaper(route, seg) {
+    const tb = laneTaperBoundaries(buildLaneRanges(route)).find((t) => t.k === seg.taperK);
+    if (!tb) return; // 区間別の設定が変わり、この境界がもう無くなっていたら、何もしない（次の再描画で消える）
+    const before = laneTaperLatLng(route, tb.k, -1);
+    const after = laneTaperLatLng(route, tb.k, 1);
+    const opacity = route.opacity;
+    const steps = seg.lines.length;
+    seg.lines.forEach((line, i) => {
+      const f0 = i / steps;
+      const f1 = (i + 1) / steps;
+      const p0 = [before[0] + (after[0] - before[0]) * f0, before[1] + (after[1] - before[1]) * f0];
+      const p1 = [before[0] + (after[0] - before[0]) * f1, before[1] + (after[1] - before[1]) * f1];
+      line.setLatLngs([p0, p1]);
+      line.setStyle({
+        weight: tb.wA + (tb.wB - tb.wA) * ((f0 + f1) / 2),
+        color: (f0 + f1) / 2 < 0.5 ? tb.colorA : tb.colorB,
+        opacity,
+      });
+    });
   }
 
   // 頂点・中間点マーカー専用ペイン。IC/JCTマーカー（デフォルトのmarkerPane）より
@@ -849,11 +934,7 @@
 
   function renderMapHint() {
     const route = getActiveRoute();
-    if (rangePicking) {
-      mapHintEl.textContent =
-        rangePicking === "start" ? "区間の始点にする点を地図上でクリック" : "区間の終点にする点を地図上でクリック";
-      mapHintEl.hidden = false;
-    } else if (currentMap.routes.length === 0 && currentMode === "edit") {
+    if (currentMap.routes.length === 0 && currentMode === "edit") {
       mapHintEl.textContent = "右側の「路線を追加する」を押して、始めましょう";
       mapHintEl.hidden = false;
     } else if (route && route.points.length === 0) {
@@ -875,11 +956,20 @@
         // 区間別の車線数・状態・色により、1つの路線を、車線数も状態も色も一定の区間
         // （レンジ）に分割し、区間ごとに太さ・線種・色の異なるポリラインとして描画する。
         const ranges = buildLaneRanges(route);
+        // 車線数（太さ）が変わる境界には、直角の段差ではなく、短い「すぼまり区間」の継ぎ目を作る
+        // （v1.53.0-beta。ユーザー指定〔地図の「案B」〕）。区間の線は、境界の少し手前・先で止める。
+        const taperBoundaries = laneTaperBoundaries(ranges);
+        const taperByEndIdx = new Map(taperBoundaries.map((t) => [t.k, t]));
+        const taperByStartIdx = new Map(taperBoundaries.map((t) => [t.k, t]));
         const segments = [];
 
         ranges.forEach((range) => {
           const status = STATUSES[range.status] || STATUSES.inservice;
           const latlngs = buildRenderedLatLngsRange(route, range.startIdx, range.endIdx);
+          const hasEndTaper = taperByEndIdx.has(range.endIdx);
+          const hasStartTaper = taperByStartIdx.has(range.startIdx);
+          if (hasEndTaper) latlngs[latlngs.length - 1] = laneTaperLatLng(route, range.endIdx, -1);
+          if (hasStartTaper) latlngs[0] = laneTaperLatLng(route, range.startIdx, 1);
           const weight = laneWeight(range.lanes);
           const dashArray = status.dashArray(weight);
           const line = L.polyline(latlngs, {
@@ -887,9 +977,9 @@
             weight,
             opacity: route.opacity,
             dashArray: dashArray,
-            // 丸い線端だと太い線でダッシュ同士が重なって潰れて見えるため、
-            // 破線・点線のときは端を角形にする。
-            lineCap: dashArray ? "butt" : "round",
+            // 丸い線端だと太い線でダッシュ同士が重なって潰れて見えるため、破線・点線のときは端を角形にする。
+            // 継ぎ目（すぼまり区間）に接する端も、丸い縁が継ぎ目にはみ出さないよう角形にする。
+            lineCap: dashArray || hasEndTaper || hasStartTaper ? "butt" : "round",
           });
           line.on("click", (e) => {
             L.DomEvent.stop(e);
@@ -901,10 +991,19 @@
 
           // 車線区分線: 太さ(=道幅)による表現に加え、線内にオフセットした
           // 区分線を重ねて車線数そのものを視覚化する（供用中の道路のみ）。暫定の枠の色は、この区間の色。
-          const dividers = range.status === "inservice" ? drawLaneDividers(latlngs, route, range.lanes, weight, range.color) : [];
+          const dividers = range.status === "inservice" ? drawLaneDividers(latlngs, route, range.lanes, weight, range.color, range.provisional) : [];
 
-          segments.push({ startIdx: range.startIdx, endIdx: range.endIdx, line, dividers });
+          segments.push({
+            startIdx: range.startIdx,
+            endIdx: range.endIdx,
+            line,
+            dividers,
+            taperEndIdx: hasEndTaper ? range.endIdx : null,
+            taperStartIdx: hasStartTaper ? range.startIdx : null,
+          });
         });
+
+        taperBoundaries.forEach((tb) => segments.push(drawLaneTaper(route, tb.k)));
 
         routeLineRefs.set(route.id, segments);
       }
@@ -957,13 +1056,12 @@
 
   // segmentColor: この区間の色（区間別の色が設定されていれば、その色。既定は route.color）。
   // 暫定の枠（ghost）は、路線色ではなく、この区間の色で描く（v1.52.0-beta）。
-  function drawLaneDividers(latlngs, route, lanesForSegment, weightForSegment, segmentColor) {
+  // isProvisional: この区間が暫定かどうか（v1.53.0-betaから、呼び出し側〔provisionalOfStep〕が決めた値をそのまま使う）。
+  function drawLaneDividers(latlngs, route, lanesForSegment, weightForSegment, segmentColor, isProvisional) {
     const created = [];
     const lanes = nearestValidLanes(lanesForSegment);
     if (lanes < 2) return created;
     const opacity = Math.min(1, route.opacity + 0.1);
-    // 暫定は「基本の車線数」の区間に適用する（区間別車線数で増やした区間は完成した幅として扱う）
-    const isProvisional = !!route.provisional && lanes === nearestValidLanes(route.lanes);
     const specs = laneDividerSpecs(lanes, weightForSegment, isProvisional);
     specs.dividers.forEach((d) => {
       const divider = L.polyline(latlngs, {
@@ -1030,8 +1128,6 @@
       if (activeRouteId !== route.id) {
         activeRouteId = route.id;
         clearSelection();
-      } else if (handleRangePickClick(ic.pointIndex)) {
-        return; // 区間別の車線数の始点・終点の選択中は、施設点でも選べる（操作点の上に重なっているため）
       }
       const oe = e.originalEvent;
       if (oe && (oe.ctrlKey || oe.metaKey)) {
@@ -1109,7 +1205,6 @@
 
       marker.on("click", (e) => {
         L.DomEvent.stop(e);
-        if (handleRangePickClick(idx)) return;
         const oe = e.originalEvent;
         if (oe && (oe.ctrlKey || oe.metaKey)) {
           toggleSelect(idx); // Ctrl（Mac: Command）+クリックで複数選択
@@ -1202,7 +1297,6 @@
 
   map.on("click", (e) => {
     if (currentMode !== "edit") return;
-    if (rangePicking) return; // 区間の始点/終点選択中は、誤って新しい点を追加しないようにする
     const route = getActiveRoute();
     if (!route) return;
     // 終点が決定（ロック）済みのときは、末尾への点の追加はできない（解除すると追加できる）。
@@ -1295,6 +1389,7 @@
       laneSegments: [],
       statusSegments: [],
       colorSegments: [],
+      provisionalSegments: [],
     };
   }
 
@@ -1593,6 +1688,7 @@
   const routeOpacityInput = document.getElementById("route-opacity");
   const routeOpacityVal = document.getElementById("route-opacity-val");
 
+  // 路線種別は、常に路線全体の設定（区間ごとには変えられない。ユーザー指定）。
   Object.entries(CATEGORIES).forEach(([key, def]) => {
     const btn = document.createElement("button");
     btn.type = "button";
@@ -1611,42 +1707,82 @@
     categoryPresetsEl.appendChild(btn);
   });
 
+  // 状態・基本の車線数・供用形態は、v1.53.0-betaから、2点以上（Ctrl+クリック）を選んでいる間は、
+  // その区間だけの設定になる（ユーザー指定。区間の選び方は「区間ごとの設定一覧」を参照）。
+  // 選んでいないときは、これまでどおり路線全体の設定（route.status / route.lanes / route.provisional）。
+  function applyStatusValue(value) {
+    const route = getActiveRoute();
+    const range = currentRangeSelection();
+    if (!route) return;
+    if (range) {
+      route.statusSegments = (route.statusSegments || []).filter((s) => !(s.fromIdx === range.fromIdx && s.toIdx === range.toIdx));
+      if (value != null) route.statusSegments.push({ id: uid(), fromIdx: range.fromIdx, toIdx: range.toIdx, status: value });
+    } else if (value != null) {
+      route.status = value;
+    }
+    render();
+  }
   Object.entries(STATUSES).forEach(([key, def]) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.dataset.status = key;
     btn.textContent = def.label;
-    btn.addEventListener("click", () => {
-      const route = getActiveRoute();
-      if (!route) return;
-      route.status = key;
-      render();
-    });
+    btn.addEventListener("click", () => applyStatusValue(key));
     statusPresetsEl.appendChild(btn);
   });
+  const statusNoneBtn = document.createElement("button");
+  statusNoneBtn.type = "button";
+  statusNoneBtn.dataset.status = "";
+  statusNoneBtn.textContent = "変更しない";
+  statusNoneBtn.hidden = true; // 区間を選んでいるときだけ表示する
+  statusNoneBtn.addEventListener("click", () => applyStatusValue(null));
+  statusPresetsEl.insertBefore(statusNoneBtn, statusPresetsEl.firstChild);
 
+  function applyLanesValue(value) {
+    const route = getActiveRoute();
+    const range = currentRangeSelection();
+    if (!route) return;
+    if (range) {
+      route.laneSegments = route.laneSegments.filter((s) => !(s.fromIdx === range.fromIdx && s.toIdx === range.toIdx));
+      if (value != null) route.laneSegments.push({ id: uid(), fromIdx: range.fromIdx, toIdx: range.toIdx, lanes: value });
+    } else if (value != null) {
+      route.lanes = value;
+      route.weight = laneWeight(value);
+    }
+    render();
+  }
   LANE_OPTIONS.forEach((n) => {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.dataset.lanes = n;
     btn.textContent = n;
     btn.title = n === 1 ? "1車線（対面通行・小規模道路の例外）" : `${n}車線（往復${n / 2}車線ずつ）`;
-    btn.addEventListener("click", () => {
-      const route = getActiveRoute();
-      if (!route) return;
-      route.lanes = n;
-      route.weight = laneWeight(n);
-      render();
-    });
+    btn.addEventListener("click", () => applyLanesValue(n));
     lanesSegmentedEl.appendChild(btn);
   });
+  const lanesNoneBtn = document.createElement("button");
+  lanesNoneBtn.type = "button";
+  lanesNoneBtn.dataset.lanes = "";
+  lanesNoneBtn.textContent = "変更しない";
+  lanesNoneBtn.hidden = true; // 区間を選んでいるときだけ表示する
+  lanesNoneBtn.addEventListener("click", () => applyLanesValue(null));
+  lanesSegmentedEl.insertBefore(lanesNoneBtn, lanesSegmentedEl.firstChild);
 
-  // 供用形態（完成形／暫定形）。暫定は「将来（現在＋2車線）に対し、当面は現在の車線数で供用」。
+  // 供用形態（完成形／暫定形／区間モードでは変更しない）。暫定は「将来（現在＋2車線）に対し、当面は現在の車線数で供用」。
   provisionalSegmentedEl.querySelectorAll("button").forEach((btn) => {
     btn.addEventListener("click", () => {
       const route = getActiveRoute();
+      const range = currentRangeSelection();
       if (!route || btn.disabled) return;
-      route.provisional = btn.dataset.provisional === "1";
+      const val = btn.dataset.provisional; // "" = 変更しない（区間モードだけ）／"0" = 完成形／"1" = 暫定形
+      if (range) {
+        route.provisionalSegments = (route.provisionalSegments || []).filter((s) => !(s.fromIdx === range.fromIdx && s.toIdx === range.toIdx));
+        if (val !== "") route.provisionalSegments.push({ id: uid(), fromIdx: range.fromIdx, toIdx: range.toIdx, provisional: val === "1" });
+        render();
+        return;
+      }
+      if (val === "") return; // 「変更しない」は区間モードのときだけ意味を持つ
+      route.provisional = val === "1";
       render();
     });
   });
@@ -1707,8 +1843,11 @@
   }
 
   // 暫定にできるのは2車線以上（1車線は対象外）。
+  function canBeProvisionalLanes(lanes) {
+    return nearestValidLanes(lanes) >= 2;
+  }
   function canBeProvisional(route) {
-    return nearestValidLanes(route.lanes) >= 2;
+    return canBeProvisionalLanes(route.lanes);
   }
 
   function provisionalLabel(route) {
@@ -1716,10 +1855,37 @@
     return `暫定${lanes}車線`;
   }
 
-  function renderProvisionalControls(route) {
+  // range があるときは、その区間の供用形態（route.provisionalSegments の、その区間の設定）を表示・操作する。
+  // ない（未選択、または選択が1点以下）ときは、これまでどおり路線全体（route.provisional）。
+  function renderProvisionalControls(route, range) {
+    if (range) {
+      const laneSeg = route.laneSegments.find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx);
+      const provSeg = (route.provisionalSegments || []).find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx);
+      const effLanes = laneSeg ? laneSeg.lanes : route.lanes;
+      const canProv = canBeProvisionalLanes(effLanes);
+      provisionalSegmentedEl.querySelectorAll("button").forEach((btn) => {
+        const val = btn.dataset.provisional;
+        btn.hidden = false;
+        btn.classList.toggle("active", provSeg ? val === (provSeg.provisional ? "1" : "0") : val === "");
+        if (val === "1") btn.disabled = !canProv;
+      });
+      if (!canProv) {
+        provisionalSummaryEl.textContent = "1車線には暫定の設定はありません";
+      } else if (!provSeg) {
+        provisionalSummaryEl.textContent = "この区間の供用形態は、路線全体の設定のままです";
+      } else if (provSeg.provisional) {
+        provisionalSummaryEl.textContent = `この区間は、暫定${effLanes}車線として供用中。将来は${effLanes + 2}車線`;
+      } else {
+        provisionalSummaryEl.textContent = `この区間は、完成形（${effLanes}車線）です`;
+      }
+      return;
+    }
     const provisional = !!route.provisional && canBeProvisional(route);
     provisionalSegmentedEl.querySelectorAll("button").forEach((btn) => {
-      const isProv = btn.dataset.provisional === "1";
+      const val = btn.dataset.provisional;
+      btn.hidden = val === ""; // 「変更しない」は、路線全体の設定では意味を持たないので隠す
+      if (val === "") return;
+      const isProv = val === "1";
       btn.classList.toggle("active", isProv === provisional);
       if (isProv) btn.disabled = !canBeProvisional(route);
     });
@@ -1741,9 +1907,47 @@
     recordHistory(true);
   });
 
+  // 色は、区間モードでは「この区間だけ変える」にチェックしたときだけ、区間の色（route.colorSegments）を編集する
+  // （車線数・状態・供用形態と違い、色は無数の値を取りうるので、チェックボックスで明示的に切り替える。v1.53.0-beta）。
+  const colorRangeFieldEl = document.getElementById("color-range-field");
+  const colorRangeEnableEl = document.getElementById("color-range-enable");
+
+  // input[type=color] のドラッグ中に何度も呼ばれうるので、重い render() は呼ばず、
+  // 地図・路線図の再描画と「区間ごとの設定一覧」だけを更新する。
+  function applyColorLive(route, range, color) {
+    if (!Array.isArray(route.colorSegments)) route.colorSegments = [];
+    let seg = route.colorSegments.find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx);
+    if (seg) seg.color = color;
+    else route.colorSegments.push({ id: uid(), fromIdx: range.fromIdx, toIdx: range.toIdx, color });
+    renderMapLayers();
+    if (currentMode === "diagram") renderRouteDiagram();
+    renderRangeSegmentsList();
+    recordHistory(true);
+  }
+
+  colorRangeEnableEl.addEventListener("change", () => {
+    const route = getActiveRoute();
+    const range = currentRangeSelection();
+    if (!route || !range) return;
+    if (colorRangeEnableEl.checked) {
+      routeColorInput.value = route.color;
+      applyColorLive(route, range, routeColorInput.value);
+      render();
+    } else {
+      route.colorSegments = (route.colorSegments || []).filter((s) => !(s.fromIdx === range.fromIdx && s.toIdx === range.toIdx));
+      render();
+    }
+  });
+
   routeColorInput.addEventListener("input", () => {
     const route = getActiveRoute();
     if (!route) return;
+    const range = currentRangeSelection();
+    if (range) {
+      if (!colorRangeEnableEl.checked) return; // 区間モードでチェックが外れている間は、入力欄自体を無効にしているので、通常ここには来ない
+      applyColorLive(route, range, routeColorInput.value);
+      return;
+    }
     route.color = routeColorInput.value;
     renderMapLayers();
     renderRouteList();
@@ -1759,48 +1963,76 @@
     recordHistory(true);
   });
 
-  // 区間別の設定フォーム（始点・終点・選んだ値）が、直前にどの路線を対象にしていたか。
-  // 路線を切り替えたら、選択中の区間（点番号）は別の路線には通用しないため、必ずリセットする
-  // （v1.50.1-beta で修正: リセットしていなかったため、切り替え後の路線に、別路線で選んだ点番号のまま
-  // 区間設定が適用され、意図しない区間の見た目が変わる不具合があった）。
-  let rangeFormsRouteId = undefined;
+  // 状態・車線数・色・供用形態のフォームは、始点・終点・選んだ値のような「保留中の状態」を持たず、
+  // いま選択中の点（selectedSet）と、いまの路線のデータから、毎回そのまま作り直す（v1.52.1-beta）。
+  // そのため、路線を切り替えても、別の路線の点番号が残って誤って適用される心配がない
+  // （v1.50.1-betaで直した不具合は、保留中の状態を持っていたことが原因だったが、この設計変更で、そもそも起きなくなった）。
+  const rangeModeBannerEl = document.getElementById("range-mode-banner");
+
   function renderRouteProps() {
     const route = getActiveRoute();
     if (!route) {
       routePropsEmptyEl.hidden = false;
       routePropsEl.hidden = true;
-      rangeFormsRouteId = undefined;
-      resetRangeForms();
+      rangeModeBannerEl.hidden = true;
+      renderRangeSegmentsList();
       return;
-    }
-    if (rangeFormsRouteId !== route.id) {
-      rangeFormsRouteId = route.id;
-      resetRangeForms();
     }
     routePropsEmptyEl.hidden = true;
     routePropsEl.hidden = false;
 
     routeNameInput.value = route.name;
     routeNameInput.title = route.name || ""; // 長い名前は入力欄で切れるので、全体はマウスオーバーで見られる
-    routeColorInput.value = route.color;
     routeOpacityInput.value = route.opacity;
     routeOpacityVal.textContent = route.opacity;
-    renderProvisionalControls(route);
     renderLockControls(route);
     renderSidebarSummary(route);
 
     categoryPresetsEl.querySelectorAll(".preset-btn").forEach((btn) => {
       btn.classList.toggle("active", btn.dataset.category === route.category);
     });
-    statusPresetsEl.querySelectorAll("button").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.status === route.status);
-    });
-    lanesSegmentedEl.querySelectorAll("button").forEach((btn) => {
-      btn.classList.toggle("active", Number(btn.dataset.lanes) === nearestValidLanes(route.lanes));
-    });
 
-    renderRangeForms();
-    renderRangeLists();
+    // 状態・色・基本の車線数・供用形態は、2点以上（Ctrl+クリック）を選んでいる間、その区間だけの設定になる
+    // （v1.53.0-beta。ユーザー指定。路線種別・透過は、常に路線全体の設定のまま）
+    const range = currentRangeSelection();
+    rangeModeBannerEl.hidden = !range;
+    if (range) {
+      rangeModeBannerEl.textContent = `点${range.fromIdx + 1}〜点${range.toIdx + 1} の区間を編集しています（種別・透過は、路線全体の設定のままです）`;
+    }
+
+    statusNoneBtn.hidden = !range;
+    const statusSeg = range ? (route.statusSegments || []).find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx) : null;
+    statusPresetsEl.querySelectorAll("button").forEach((btn) => {
+      const val = btn.dataset.status;
+      if (val === "") return; // statusNoneBtn 自身（active切替は下で行う）
+      btn.classList.toggle("active", range ? val === (statusSeg ? statusSeg.status : " ") : val === route.status);
+    });
+    statusNoneBtn.classList.toggle("active", !!range && !statusSeg);
+
+    lanesNoneBtn.hidden = !range;
+    const laneSeg = range ? route.laneSegments.find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx) : null;
+    lanesSegmentedEl.querySelectorAll("button").forEach((btn) => {
+      if (btn.dataset.lanes === "") return; // lanesNoneBtn 自身
+      const n = Number(btn.dataset.lanes);
+      btn.classList.toggle("active", range ? !!laneSeg && n === nearestValidLanes(laneSeg.lanes) : n === nearestValidLanes(route.lanes));
+    });
+    lanesNoneBtn.classList.toggle("active", !!range && !laneSeg);
+
+    renderProvisionalControls(route, range);
+
+    // 色: 区間モードでは「この区間だけ変える」のチェックで切り替える
+    const colorSeg = range ? (route.colorSegments || []).find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx) : null;
+    colorRangeFieldEl.hidden = !range;
+    if (range) {
+      colorRangeEnableEl.checked = !!colorSeg;
+      routeColorInput.disabled = !colorSeg;
+      routeColorInput.value = colorSeg ? colorSeg.color : route.color;
+    } else {
+      routeColorInput.disabled = false;
+      routeColorInput.value = route.color;
+    }
+
+    renderRangeSegmentsList();
   }
 
   // ---------------------------------------------------------------------
@@ -1856,6 +2088,7 @@
     route.laneSegments = fixSegments(route.laneSegments);
     route.statusSegments = fixSegments(route.statusSegments);
     route.colorSegments = fixSegments(route.colorSegments);
+    route.provisionalSegments = fixSegments(route.provisionalSegments);
   }
 
   // 選択中の点（複数選択可。未選択なら末尾点）をまとめて削除する。
@@ -1914,240 +2147,102 @@
   });
 
   // ---------------------------------------------------------------------
-  // サイドバー: 区間別の設定（車線数・状態）。2点を選んで、その間だけ、基本の値から変える
+  // サイドバー: 区間ごとの設定一覧（車線数・状態・色・供用形態）。
+  // v1.52.1-beta で、Ctrl+クリックで選んだ点（最小・最大の2点）を区間にする方式にした。
+  // v1.53.0-beta で、専用の選択欄をやめ、路線全体の設定（状態・色・車線数・供用形態）を、
+  // 区間を選んでいる間はその区間の設定として使うようにした（ユーザー指定。各フィールドの
+  // クリックハンドラは、それぞれの定義箇所〔applyStatusValue 等〕にある）。ここには、
+  // 登録済みの区間の一覧と削除ボタンだけを置く。
   // ---------------------------------------------------------------------
-  // 「始点を選ぶ」「終点を選ぶ」ボタンで、次に地図上でクリックした点をどちらに使うかを表す状態。
-  // 点のマーカーのクリックハンドラ側で、この値（と、どのフォームの操作か）を見て分岐する。
-  let rangePicking = null; // null | "start" | "end"
-  let rangePickingForm = null; // rangePicking のとき、選んだ点を使うフォーム
-  const rangeForms = [];
+  // いま選択中の点（selectedSet）から、区間の [fromIdx, toIdx] を求める。2点未満なら null。
+  function currentRangeSelection() {
+    if (selectedSet.size < 2) return null;
+    const sorted = Array.from(selectedSet).sort((a, b) => a - b);
+    const fromIdx = sorted[0];
+    const toIdx = sorted[sorted.length - 1];
+    return fromIdx === toIdx ? null : { fromIdx, toIdx };
+  }
 
-  // 区間別の設定フォーム（車線数・状態。v1.51.0-beta で、1つの区間選択に統合した。保存データは、
-  // これまでどおり route.laneSegments / route.statusSegments の2つに分けたまま持つ（互換性のため）。
-  // どちらか一方だけを選んで適用してもよい（両方選べば、同じ区間に両方登録される）。
-  function createCombinedRangeForm() {
-    const pickStart = document.getElementById("btn-pick-range-start");
-    const pickEnd = document.getElementById("btn-pick-range-end");
-    const useSelected = document.getElementById("btn-use-selected-range");
-    const summary = document.getElementById("range-summary");
-    const laneOptionsEl = document.getElementById("range-lanes-segmented");
-    const statusOptionsEl = document.getElementById("range-status-segmented");
-    const colorEnable = document.getElementById("range-color-enable");
-    const colorInput = document.getElementById("range-color-input");
-    const apply = document.getElementById("btn-add-range-segment");
+  function renderRangeSegmentsList() {
+    const route = getActiveRoute();
     const list = document.getElementById("range-segments-list");
-    const NONE = ""; // 「変更しない」を表す値
-    const st = { start: null, end: null, lanes: null, status: null, color: null };
-
-    const addOption = (container, value, label, onSelect) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.dataset.value = value === null ? NONE : String(value);
-      btn.textContent = label;
-      btn.addEventListener("click", () => {
-        onSelect();
-        form.renderForm();
+    list.innerHTML = "";
+    if (!route) return;
+    // 区間別の車線数・状態・色・供用形態を、区間（fromIdx〜toIdx）が同じものどうしでまとめて、1行に表示する
+    // （別々に登録されていても、両端が同じなら1行にする）。
+    const rows = new Map();
+    const rowOf = (fromIdx, toIdx) => {
+      const key = `${fromIdx}-${toIdx}`;
+      if (!rows.has(key))
+        rows.set(key, {
+          fromIdx,
+          toIdx,
+          laneId: null,
+          laneText: null,
+          statusId: null,
+          statusText: null,
+          colorId: null,
+          color: null,
+          provId: null,
+          provText: null,
+        });
+      return rows.get(key);
+    };
+    route.laneSegments.forEach((seg) => {
+      const row = rowOf(seg.fromIdx, seg.toIdx);
+      row.laneId = seg.id;
+      row.laneText = `${seg.lanes}車線`;
+    });
+    (route.statusSegments || []).forEach((seg) => {
+      const row = rowOf(seg.fromIdx, seg.toIdx);
+      row.statusId = seg.id;
+      row.statusText = (STATUSES[seg.status] || STATUSES.inservice).label;
+    });
+    (route.colorSegments || []).forEach((seg) => {
+      const row = rowOf(seg.fromIdx, seg.toIdx);
+      row.colorId = seg.id;
+      row.color = seg.color;
+    });
+    (route.provisionalSegments || []).forEach((seg) => {
+      const row = rowOf(seg.fromIdx, seg.toIdx);
+      row.provId = seg.id;
+      row.provText = seg.provisional ? "暫定形" : "完成形";
+    });
+    const items = Array.from(rows.values()).sort((a, b) => a.fromIdx - b.fromIdx || a.toIdx - b.toIdx);
+    if (items.length === 0) {
+      list.innerHTML = '<div class="empty-msg">区間ごとの設定は未設定です</div>';
+      return;
+    }
+    // 区間の両端は、施設（IC・JCTなど）があればその名前、なければ「点N」で表す（地図上に点の番号は出ないため）
+    const endLabel = (idx) => {
+      const ic = route.ics.find((x) => x.pointIndex === idx);
+      return ic && ic.name ? ic.name : `点${idx + 1}`;
+    };
+    items.forEach((item) => {
+      const text = [item.laneText, item.statusText, item.provText, item.color ? "色" : null].filter(Boolean).join("・");
+      const swatch = item.color ? `<span class="range-segment-swatch" style="background:${escapeHtml(item.color)}"></span>` : "";
+      const div = document.createElement("div");
+      div.className = "list-item";
+      div.title = `点${item.fromIdx + 1}〜点${item.toIdx + 1}`;
+      div.innerHTML = `<span class="name">${swatch}${escapeHtml(endLabel(item.fromIdx))}〜${escapeHtml(endLabel(item.toIdx))}: ${escapeHtml(text)}</span>`;
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn small danger-outline";
+      delBtn.title = "この区間を削除";
+      delBtn.textContent = "削除";
+      delBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (item.laneId) route.laneSegments = route.laneSegments.filter((s) => s.id !== item.laneId);
+        if (item.statusId) route.statusSegments = (route.statusSegments || []).filter((s) => s.id !== item.statusId);
+        if (item.colorId) route.colorSegments = (route.colorSegments || []).filter((s) => s.id !== item.colorId);
+        if (item.provId) route.provisionalSegments = (route.provisionalSegments || []).filter((s) => s.id !== item.provId);
+        render();
       });
-      container.appendChild(btn);
-    };
-    addOption(laneOptionsEl, null, "変更しない", () => (st.lanes = null));
-    LANE_OPTIONS.forEach((n) => addOption(laneOptionsEl, n, String(n), () => (st.lanes = n)));
-    addOption(statusOptionsEl, null, "変更しない", () => (st.status = null));
-    Object.entries(STATUSES).forEach(([key, def]) => addOption(statusOptionsEl, key, def.label, () => (st.status = key)));
-
-    // 色は選択肢が無数にあるので、チェックボックス（変える／変えない）＋色選択欄にする。
-    // オンにした直後は、色選択欄の初期値を、いまの路線の色にそろえる（そのまま使うか、変えて選べる）
-    colorEnable.addEventListener("change", () => {
-      if (colorEnable.checked) {
-        const route = getActiveRoute();
-        if (route) colorInput.value = route.color;
-        st.color = colorInput.value;
-      } else {
-        st.color = null;
-      }
-      form.renderForm();
+      const actions = document.createElement("span");
+      actions.className = "row-actions";
+      actions.appendChild(delBtn);
+      div.appendChild(actions);
+      list.appendChild(div);
     });
-    colorInput.addEventListener("input", () => {
-      if (colorEnable.checked) st.color = colorInput.value;
-    });
-
-    // Ctrl+クリックで2点以上を選択している場合は、その最小・最大の点を区間の始点・終点にする。
-    useSelected.addEventListener("click", () => {
-      if (selectedSet.size < 2) return;
-      const sorted = Array.from(selectedSet).sort((a, b) => a - b);
-      st.start = sorted[0];
-      st.end = sorted[sorted.length - 1];
-      rangePicking = null;
-      renderRangeForms();
-    });
-    const startPicking = (which) => {
-      const same = rangePicking === which && rangePickingForm === form;
-      rangePicking = same ? null : which;
-      rangePickingForm = same ? null : form;
-      renderRangeForms();
-    };
-    pickStart.addEventListener("click", () => startPicking("start"));
-    pickEnd.addEventListener("click", () => startPicking("end"));
-
-    apply.addEventListener("click", () => {
-      const route = getActiveRoute();
-      if (!route || st.start == null || st.end == null) return;
-      const fromIdx = Math.min(st.start, st.end);
-      const toIdx = Math.max(st.start, st.end);
-      // 念のための保険: fromIdx/toIdx は、いまの路線の点数の範囲内であること
-      // （通常は路線切り替え時に resetRangeForms() でリセットされるため起きないはずだが、
-      //  範囲外の値を万一の理由で適用してしまうと、意図しない区間の見た目が変わるため）
-      if (fromIdx === toIdx || (st.lanes == null && st.status == null && st.color == null) || toIdx >= route.points.length) return;
-      if (st.lanes != null) route.laneSegments.push({ id: uid(), fromIdx, toIdx, lanes: st.lanes });
-      if (st.status != null) {
-        if (!Array.isArray(route.statusSegments)) route.statusSegments = [];
-        route.statusSegments.push({ id: uid(), fromIdx, toIdx, status: st.status });
-      }
-      if (st.color != null) {
-        if (!Array.isArray(route.colorSegments)) route.colorSegments = [];
-        route.colorSegments.push({ id: uid(), fromIdx, toIdx, color: st.color });
-      }
-      st.start = null;
-      st.end = null;
-      st.lanes = null;
-      st.status = null;
-      st.color = null;
-      colorEnable.checked = false;
-      render();
-    });
-
-    const form = {
-      st,
-      // 地図上で点をクリックしたときに呼ばれる（区間の始点・終点の選択中のとき）
-      pick(idx) {
-        if (rangePicking === "start") st.start = idx;
-        else st.end = idx;
-        rangePicking = null;
-        rangePickingForm = null;
-        renderRangeForms();
-      },
-      reset() {
-        st.start = null;
-        st.end = null;
-        st.lanes = null;
-        st.status = null;
-        st.color = null;
-        colorEnable.checked = false;
-      },
-      // 始点/終点ボタンの状態表示、追加ボタンの有効/無効を更新する
-      renderForm() {
-        renderMapHint();
-        const picking = rangePicking && rangePickingForm === form;
-        useSelected.disabled = selectedSet.size < 2;
-        pickStart.classList.toggle("active-toggle", picking && rangePicking === "start");
-        pickEnd.classList.toggle("active-toggle", picking && rangePicking === "end");
-        pickStart.textContent = st.start != null ? `始点: 点${st.start + 1}` : "始点を選ぶ";
-        pickEnd.textContent = st.end != null ? `終点: 点${st.end + 1}` : "終点を選ぶ";
-        if (picking) {
-          summary.textContent = rangePicking === "start" ? "地図上で区間の始点にする点をクリックしてください" : "地図上で区間の終点にする点をクリックしてください";
-        } else if (st.start == null || st.end == null) {
-          summary.textContent = "地図上で区間の始点・終点となる2つの点をクリックして選択してください";
-        } else if (st.start === st.end) {
-          summary.textContent = "始点と終点には異なる点を選んでください";
-        } else {
-          summary.textContent = `点${Math.min(st.start, st.end) + 1}〜点${Math.max(st.start, st.end) + 1} の区間に適用する車線数・状態・色を選んでください（一部だけでもかまいません）`;
-        }
-        laneOptionsEl.querySelectorAll("button").forEach((btn) => {
-          btn.classList.toggle("active", btn.dataset.value === (st.lanes == null ? NONE : String(st.lanes)));
-        });
-        statusOptionsEl.querySelectorAll("button").forEach((btn) => {
-          btn.classList.toggle("active", btn.dataset.value === (st.status == null ? NONE : String(st.status)));
-        });
-        colorInput.disabled = !colorEnable.checked;
-        apply.disabled = !(st.start != null && st.end != null && st.start !== st.end && (st.lanes != null || st.status != null || st.color != null));
-      },
-      renderList() {
-        const route = getActiveRoute();
-        list.innerHTML = "";
-        if (!route) return;
-        // 区間別の車線数・状態を、区間（fromIdx〜toIdx）が同じものどうしでまとめて、1行に表示する
-        // （別々に登録されていても、両端が同じなら1行にする）。
-        const rows = new Map();
-        const rowKey = (fromIdx, toIdx) => `${fromIdx}-${toIdx}`;
-        const rowOf = (fromIdx, toIdx) => {
-          const key = rowKey(fromIdx, toIdx);
-          if (!rows.has(key))
-            rows.set(key, { fromIdx, toIdx, laneId: null, laneText: null, statusId: null, statusText: null, colorId: null, color: null });
-          return rows.get(key);
-        };
-        route.laneSegments.forEach((seg) => {
-          const row = rowOf(seg.fromIdx, seg.toIdx);
-          row.laneId = seg.id;
-          row.laneText = `${seg.lanes}車線`;
-        });
-        (route.statusSegments || []).forEach((seg) => {
-          const row = rowOf(seg.fromIdx, seg.toIdx);
-          row.statusId = seg.id;
-          row.statusText = (STATUSES[seg.status] || STATUSES.inservice).label;
-        });
-        (route.colorSegments || []).forEach((seg) => {
-          const row = rowOf(seg.fromIdx, seg.toIdx);
-          row.colorId = seg.id;
-          row.color = seg.color;
-        });
-        const items = Array.from(rows.values()).sort((a, b) => a.fromIdx - b.fromIdx || a.toIdx - b.toIdx);
-        if (items.length === 0) {
-          list.innerHTML = '<div class="empty-msg">区間ごとの車線数・状態・色の変更は未設定です</div>';
-          return;
-        }
-        // 区間の両端は、施設（IC・JCTなど）があればその名前、なければ「点N」で表す（地図上に点の番号は出ないため）
-        const endLabel = (idx) => {
-          const ic = route.ics.find((x) => x.pointIndex === idx);
-          return ic && ic.name ? ic.name : `点${idx + 1}`;
-        };
-        items.forEach((item) => {
-          const text = [item.laneText, item.statusText, item.color ? "色" : null].filter(Boolean).join("・");
-          const swatch = item.color ? `<span class="range-segment-swatch" style="background:${escapeHtml(item.color)}"></span>` : "";
-          const div = document.createElement("div");
-          div.className = "list-item";
-          div.title = `点${item.fromIdx + 1}〜点${item.toIdx + 1}`;
-          div.innerHTML = `<span class="name">${swatch}${escapeHtml(endLabel(item.fromIdx))}〜${escapeHtml(endLabel(item.toIdx))}: ${escapeHtml(text)}</span>`;
-          const delBtn = document.createElement("button");
-          delBtn.className = "btn small danger-outline";
-          delBtn.title = "この区間を削除";
-          delBtn.textContent = "削除";
-          delBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            if (item.laneId) route.laneSegments = route.laneSegments.filter((s) => s.id !== item.laneId);
-            if (item.statusId) route.statusSegments = (route.statusSegments || []).filter((s) => s.id !== item.statusId);
-            if (item.colorId) route.colorSegments = (route.colorSegments || []).filter((s) => s.id !== item.colorId);
-            render();
-          });
-          const actions = document.createElement("span");
-          actions.className = "row-actions";
-          actions.appendChild(delBtn);
-          div.appendChild(actions);
-          list.appendChild(div);
-        });
-      },
-    };
-    rangeForms.push(form);
-    return form;
-  }
-
-  const renderRangeForms = () => rangeForms.forEach((f) => f.renderForm());
-  const renderRangeLists = () => rangeForms.forEach((f) => f.renderList());
-  function resetRangeForms() {
-    rangePicking = null;
-    rangePickingForm = null;
-    rangeForms.forEach((f) => f.reset());
-    renderRangeForms();
-    renderRangeLists();
-  }
-
-  createCombinedRangeForm();
-
-  // 点のマーカーのクリック時に呼ばれる。区間選択中であればその点を採用して
-  // true を返す（通常の点選択トグルは行わせない）。選択中でなければ false。
-  function handleRangePickClick(idx) {
-    if (!rangePicking || !rangePickingForm) return false;
-    rangePickingForm.pick(idx);
-    return true;
   }
 
   // 「設定」タブの「施設設定」欄（旧「点」タブ・旧「IC・JCTを設定」）。
@@ -2597,6 +2692,34 @@
   const DIAGRAM_LANE_PX = 5;
   const diagramLineWidth = (lanes) => nearestValidLanes(lanes) * DIAGRAM_LANE_PX;
 
+  // 車線数が変わる境界の継ぎ目（斜めに切ってつなぐ）の、片側の長さ（px。v1.53.0-beta。ユーザー指定）
+  const LANE_TAPER_PX = 8;
+
+  // 太さが変わる境界を、直角の段差ではなく、斜めのSVGの四角形2枚（それぞれの区間の色）でつなぐ。
+  // c = { boundary, t, wA, wB, colorA, colorB }（boundary: 境界の位置、t: 継ぎ目の片側の長さ、
+  // wA/wB: 境界の前後の太さ、colorA/colorB: 境界の前後の色）。H: 横向きの図か。lineY: 横向きのときの、線の中心の位置。
+  function laneTaperSvg(c, H, lineY) {
+    const { boundary, t, wA, wB, colorA, colorB } = c;
+    const wMid = (wA + wB) / 2;
+    const maxW = Math.max(wA, wB);
+    if (H) {
+      // 横向きの図: 継ぎ目は縦の帯（左右にt、上下にmaxW/2）
+      const left = boundary - t;
+      const top = lineY - maxW / 2;
+      const cy = maxW / 2;
+      const polyA = `${0},${cy - wA / 2} ${t},${cy - wMid / 2} ${t},${cy + wMid / 2} ${0},${cy + wA / 2}`;
+      const polyB = `${t},${cy - wMid / 2} ${2 * t},${cy - wB / 2} ${2 * t},${cy + wB / 2} ${t},${cy + wMid / 2}`;
+      return `<svg class="diagram-lane-taper" style="left:${left}px;top:${top}px;width:${2 * t}px;height:${maxW}px;" viewBox="0 0 ${2 * t} ${maxW}"><polygon points="${polyA}" fill="${escapeHtml(colorA)}"/><polygon points="${polyB}" fill="${escapeHtml(colorB)}"/></svg>`;
+    }
+    // 縦向きの図: 継ぎ目は横の帯（上下にt、左右にmaxW/2）。線の中心は、列の左から33px
+    const left = 33 - maxW / 2;
+    const top = boundary - t;
+    const cx = maxW / 2;
+    const polyA = `${cx - wA / 2},0 ${cx + wA / 2},0 ${cx + wMid / 2},${t} ${cx - wMid / 2},${t}`;
+    const polyB = `${cx - wMid / 2},${t} ${cx + wMid / 2},${t} ${cx + wB / 2},${2 * t} ${cx - wB / 2},${2 * t}`;
+    return `<svg class="diagram-lane-taper" style="left:${left}px;top:${top}px;width:${maxW}px;height:${2 * t}px;" viewBox="0 0 ${maxW} ${2 * t}"><polygon points="${polyA}" fill="${escapeHtml(colorA)}"/><polygon points="${polyB}" fill="${escapeHtml(colorB)}"/></svg>`;
+  }
+
   // 道路の上に重ねる、車線の区分線と、暫定の枠（地図と同じ。区分線の仕様は laneDividerSpecs() を使う）。
   // 道路（w px の太さ）の要素の中に置く。alongX=true: 道路が横向き（横向きの図の線、縦向きの図の分岐の線）
   function diagramLaneDecorHtml(lanes, provisional, w, alongX) {
@@ -2615,9 +2738,6 @@
     }
     return html;
   }
-  // 区間の車線数 lanes が、暫定として描く区間か（路線の基本の車線数の区間だけ。地図と同じ）
-  const isProvisionalLanes = (r, lanes) => !!r.provisional && nearestValidLanes(lanes) === nearestValidLanes(r.lanes);
-
   // 分岐の線（本線から分岐する路線の始点側へつなぐ線）。本線からなめらかに離れ（円弧）、直線で進み、円弧で分岐する路線の線へつながる。
   // 縦向きの図の座標で作る（x0: 本線の線の中心、x1: 分岐する路線の線の中心、yj: 分岐の線の位置、R: 角の丸みの半径）。
   // swap=true のときは、x と y を入れ替える（横向きの図。本線が横の線、分岐する路線が下の行）。
@@ -2720,7 +2840,7 @@
     const cornerRadiusOf = (k) => {
       const step = k.branchFrom.at === "end" ? k.points.length - 2 : 0; // 分岐する路線の、分岐点側の区間
       const lanes = nearestValidLanes(laneOfStep(k, step));
-      const prov = statusOfStep(k, step) === "inservice" && isProvisionalLanes(k, lanes);
+      const prov = statusOfStep(k, step) === "inservice" && provisionalOfStep(k, step);
       const half = ((prov ? lanes + 2 : lanes) * DIAGRAM_LANE_PX) / 2;
       return Math.max(CORNER_MIN, half + 4);
     };
@@ -2862,7 +2982,7 @@
               y2: yAt(Math.max(da, db)),
               status: statusOfStep(r, q),
               lanes: nearestValidLanes(laneOfStep(r, q)),
-              prov: isProvisionalLanes(r, laneOfStep(r, q)),
+              prov: provisionalOfStep(r, q),
               color: colorOfStep(r, q),
             });
           }
@@ -2877,17 +2997,33 @@
             if (q === 0) m.y1 = isBranch ? cornerRadiusOf(r) : 0; // 分岐する路線の線は、角の丸み（分岐の線）のあとから始める
             if (q === merged.length - 1) m.y2 = height;
             else m.y2 = merged[q + 1].y1;
+            m.w = diagramLineWidth(m.lanes);
           });
+          // 車線数が変わる境界（太さが変わる区間の継ぎ目）は、直角の段差ではなく、斜めに切った
+          // 短い継ぎ目でつなぐ（v1.53.0-beta。ユーザー指定〔「案A'」〕）。区間の長さが短いときは、
+          // 継ぎ目がその区間からはみ出さないよう、継ぎ目の長さを短くする。
+          const taperConnectors = [];
+          for (let q = 0; q < merged.length - 1; q++) {
+            const a = merged[q];
+            const b = merged[q + 1];
+            if (a.w === b.w) continue;
+            const t = Math.min(LANE_TAPER_PX, (a.y2 - a.y1) / 2, (b.y2 - b.y1) / 2);
+            if (t < 1) continue; // 区間が短すぎるときは、継ぎ目を作らず、そのまま段差にする
+            const boundary = a.y2;
+            taperConnectors.push({ boundary, t, wA: a.w, wB: b.w, colorA: a.color, colorB: b.color });
+            a.y2 = boundary - t;
+            b.y1 = boundary + t;
+          }
           lineHtml = merged
             .map((m) => {
-              const w = diagramLineWidth(m.lanes);
+              const w = m.w;
               const len = Math.max(0, m.y2 - m.y1);
               const decor = m.status === "inservice" ? diagramLaneDecorHtml(m.lanes, m.prov, w, H) : ""; // 区分線と暫定の枠は、供用中の区間だけ（地図と同じ）
               const colorStyle = `--diagram-color:${escapeHtml(m.color)};`; // 区間別の色（v1.52.0-beta。未設定なら route.color のまま）
               if (H) return `<div class="diagram-line-seg h status-${escapeHtml(m.status)}" style="left:${m.y1}px;width:${len}px;top:${lineY - w / 2}px;height:${w}px;${colorStyle}">${decor}</div>`;
               return `<div class="diagram-line-seg status-${escapeHtml(m.status)}" style="top:${m.y1}px;height:${len}px;left:${33 - w / 2}px;width:${w}px;${colorStyle}">${decor}</div>`;
             })
-            .join("");
+            .join("") + taperConnectors.map((c) => laneTaperSvg(c, H, lineY)).join("");
         }
         parts[colIdx] = { html: headHtml + lineHtml + nodesHtml + gapsHtml, top, height, colorStyle, color: colorOf(r), isBranch, route: r, headH, lineY };
 
@@ -2904,7 +3040,7 @@
           const kStatus = statusOfStep(k, kStep);
           const kLanes = nearestValidLanes(laneOfStep(k, kStep));
           const kWidth = diagramLineWidth(kLanes);
-          connectors.push({ from: colIdx, to: childCol, top: childTop, color: colorOf(k), status: kStatus, width: kWidth, lanes: kLanes, prov: isProvisionalLanes(k, kLanes), r: cornerRadiusOf(k) });
+          connectors.push({ from: colIdx, to: childCol, top: childTop, color: colorOf(k), status: kStatus, width: kWidth, lanes: kLanes, prov: provisionalOfStep(k, kStep), r: cornerRadiusOf(k) });
           emit(k, childCol, childTop, rppm, true, k.branchFrom.at === "end" ? "end" : "start", n.e.ic.name || "(無名)");
         });
       };
@@ -3205,6 +3341,7 @@
     out.laneSegments = segs(r.laneSegments, (s) => ({ lanes: nearestValidLanes(isFiniteNumber(s.lanes) ? s.lanes : 2) }));
     out.statusSegments = segs(r.statusSegments, (s) => ({ status: STATUSES[s.status] ? s.status : "inservice" }));
     out.colorSegments = segs(r.colorSegments, (s) => ({ color: COLOR_PATTERN.test(s.color) ? s.color : out.color }));
+    out.provisionalSegments = segs(r.provisionalSegments, (s) => ({ provisional: !!s.provisional }));
     const bf = r.branchFrom;
     if (bf && typeof bf === "object" && typeof bf.routeId === "string" && typeof bf.icId === "string" && (bf.at === "start" || bf.at === "end")) {
       out.branchFrom = { routeId: cleanString(bf.routeId, 80), icId: cleanString(bf.icId, 80), at: bf.at };
@@ -3241,6 +3378,7 @@
       if (!Array.isArray(r.laneSegments)) r.laneSegments = [];
       if (!Array.isArray(r.statusSegments)) r.statusSegments = []; // 区間別の状態（v1.40.0。それ以前の保存データにはない）
       if (!Array.isArray(r.colorSegments)) r.colorSegments = []; // 区間別の色（v1.52.0-beta。それ以前の保存データにはない）
+      if (!Array.isArray(r.provisionalSegments)) r.provisionalSegments = []; // 区間別の供用形態（v1.53.0-beta。それ以前の保存データにはない）
       migrateLanesOverride(r);
       // v1.22.0で廃止した「ハーフIC」（type: "half_ic"、halfDirection）は、通常のICに変換する
       (r.ics || []).forEach((ic) => {
@@ -3450,10 +3588,7 @@
     if (isTypingTarget(e.target) || mod || e.altKey) return;
     if (currentMode !== "edit") return;
     if (e.key === "Escape") {
-      if (rangePicking) {
-        rangePicking = null;
-        renderRangeForms();
-      } else if (selectedSet.size > 0) {
+      if (selectedSet.size > 0) {
         clearSelection();
         render();
       }

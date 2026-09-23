@@ -137,20 +137,27 @@
            「施設設定」（旧「IC・JCT設定」）は、点を選んでいるときだけ表示する -->
       <div class="tab-pane" data-pane="look" hidden>
         <section class="panel">
+          <!-- 区間モードの案内（v1.53.0-beta。ユーザー指定）。地図上でCtrl+クリックし2点以上を選んでいる間は、
+               下の状態・色・基本の車線数・供用形態が、路線全体ではなく、その区間だけの設定になる -->
+          <p class="hint-text range-mode-banner" id="range-mode-banner" hidden></p>
+
           <div class="field">
             <label>路線種別</label>
             <div id="category-presets" class="preset-grid"></div>
           </div>
 
           <div class="field">
-            <label>状態</label>
-            <div id="status-presets" class="segmented"></div>
+            <label id="status-label">状態</label>
+            <div id="status-presets" class="segmented" role="group" aria-labelledby="status-label"></div>
           </div>
 
           <div class="field-row">
             <div class="field">
               <label>色</label>
-              <input type="color" id="route-color">
+              <div class="range-color-row">
+                <input type="color" id="route-color">
+                <label class="checkbox-field" id="color-range-field" hidden><input type="checkbox" id="color-range-enable">この区間だけ変える</label>
+              </div>
             </div>
             <div class="field">
               <label>透過 <span id="route-opacity-val" class="muted"></span></label>
@@ -159,48 +166,27 @@
           </div>
 
           <div class="field">
-            <label>基本の車線数（道路構造令：往復同数が原則）</label>
-            <div id="lanes-segmented" class="segmented"></div>
+            <label id="lanes-label">基本の車線数（道路構造令：往復同数が原則）</label>
+            <div id="lanes-segmented" class="segmented" role="group" aria-labelledby="lanes-label"></div>
           </div>
 
           <div class="field">
             <label>供用形態</label>
             <div id="provisional-segmented" class="segmented">
+              <button type="button" data-provisional="" id="provisional-none-btn" hidden>変更しない</button>
               <button type="button" data-provisional="0" title="計画どおりの車線数で供用する（完成形）">完成形</button>
               <button type="button" data-provisional="1" title="将来の車線数（現在＋2車線）に対し、当面は現在の車線数で供用する（暫定）">暫定形</button>
             </div>
             <p class="hint-text" id="provisional-summary"></p>
           </div>
 
-          <!-- 区間別の設定（車線数・状態。v1.51.0-beta で、1つの区間に、車線数と状態をまとめて設定できるように統合） -->
+          <!-- 区間ごとの設定一覧（v1.51.0-beta で、車線数・状態・色を1つの区間選択に統合。v1.52.0-betaで色を追加。
+               v1.53.0-beta で、専用の選択欄をやめ、上の状態・色・車線数・供用形態を、選択中の区間にそのまま
+               適用するように変更した。ユーザー指定。ここには、登録済みの区間の一覧と削除ボタンだけを置く） -->
           <div class="field">
-            <label>区間別の設定</label>
+            <label>区間ごとの設定一覧</label>
             <div id="range-segments-list" class="list-box"></div>
-
-            <div class="lane-segment-form">
-              <div class="btn-row">
-                <button id="btn-pick-range-start" type="button" class="btn ghost small">始点を選ぶ</button>
-                <button id="btn-pick-range-end" type="button" class="btn ghost small">終点を選ぶ</button>
-              </div>
-              <button id="btn-use-selected-range" type="button" class="btn ghost small full" disabled title="Ctrl+クリックで選んだ2点以上の、最初と最後の点を区間にします">選択中の点から区間を設定</button>
-              <p class="hint-text" id="range-summary">地図上で区間の始点・終点となる2つの点をクリックして選択してください</p>
-              <div class="field">
-                <label id="range-lanes-label">車線数</label>
-                <div id="range-lanes-segmented" class="segmented" role="group" aria-labelledby="range-lanes-label"></div>
-              </div>
-              <div class="field">
-                <label id="range-status-label">状態</label>
-                <div id="range-status-segmented" class="segmented" role="group" aria-labelledby="range-status-label"></div>
-              </div>
-              <div class="field">
-                <label>色</label>
-                <div class="range-color-row">
-                  <label class="checkbox-field"><input type="checkbox" id="range-color-enable">この区間の色を変える</label>
-                  <input type="color" id="range-color-input" disabled>
-                </div>
-              </div>
-              <button id="btn-add-range-segment" type="button" class="btn primary full" disabled>この区間に適用</button>
-            </div>
+            <p class="hint-text">地図上で、<span class="kbd">Ctrl</span>+クリックして2点以上を選ぶと、上の状態・色・車線数・供用形態が、その区間だけの設定になります（選ぶと、その場ですぐに反映されます）。</p>
           </div>
 
           <!-- 施設設定（旧「IC・JCT設定」。v1.51.0-beta で、右クリックメニューを廃止し、ここに統合。
@@ -398,7 +384,7 @@
           <thead><tr><th>タブ</th><th>設定できること</th></tr></thead>
           <tbody>
             <tr><th>路線</th><td>路線一覧、選んだ路線の名前・向き反転・削除、始点・終点の状態、JCT・ICでの分岐</td></tr>
-            <tr><th>設定</th><td>路線種別・状態・色・透過、基本の車線数・供用形態（暫定）、区間別の設定（車線数・状態・色）、施設設定（点を選んでいるときだけ表示されます）</td></tr>
+            <tr><th>設定</th><td>路線種別・状態・色・透過・基本の車線数・供用形態（暫定）。状態・色・車線数・供用形態は、2点以上を選んでいる間、区間別の設定になります。施設設定（点を選んでいるときだけ表示されます）</td></tr>
             <tr><th>施設</th><td>「路線図」モードだけのタブです。施設番号と、地図上の名称ラベルの表示を設定します。</td></tr>
           </tbody>
         </table>
@@ -449,14 +435,16 @@
         <h3 id="manual-h-look">路線の見た目</h3>
         <figure class="manual-figure" data-figure="tutorial:路線の見た目"><figcaption>路線種別・状態・車線数などで、地図上の線の見た目が変わります</figcaption></figure>
         <p>サイドバーの「設定」タブで設定します。地図上での見え方（線の種類・太さ・区分線・色など）は、地図左下の「凡例」ボタンで、編集しながら図で確認できます。</p>
+        <p class="manual-note">状態・色・基本の車線数・供用形態は、地図上で2点以上（<span class="kbd">Ctrl</span>+クリック）を選んでいる間は、路線全体ではなく、<b>その区間だけの設定</b>になります。詳しくは次の「区間別の設定」をご覧ください。</p>
         <table class="manual-def">
           <thead><tr><th>項目</th><th>内容</th></tr></thead>
           <tbody>
-            <tr><th>路線種別</th><td>高速自動車国道・都市高速道路・地域高規格道路・一般国道・都道府県道・市町村道から選びます。色と車線数の初期値が設定されます。</td></tr>
-            <tr><th>状態</th><td>供用中（実線）／事業中・建設中（破線）／計画・構想中（点線）から選びます。路線の一部だけ状態が違うときは、次の「区間別の設定」を使います。</td></tr>
+            <tr><th>路線種別</th><td>高速自動車国道・都市高速道路・地域高規格道路・一般国道・都道府県道・市町村道から選びます。色と車線数の初期値が設定されます。常に路線全体の設定です。</td></tr>
+            <tr><th>状態</th><td>供用中（実線）／事業中・建設中（破線）／計画・構想中（点線）から選びます。</td></tr>
             <tr><th>基本の車線数</th><td>1・2・4・6・8車線から選びます。線の太さは、車線数から自動で決まります。</td></tr>
             <tr><th>供用形態（完成形／暫定形）</th><td>「暫定形」を選ぶと、「暫定◯車線」（当面は現在の車線数で供用し、将来は＋2車線）として扱われ、将来の幅が点線の枠で表示されます。2・4・6・8車線で選べます（1車線では選べません）。暫定の路線には、路線一覧に「暫定◯車線」のタグが付きます。</td></tr>
-            <tr><th>色・透過</th><td>路線の色と透明度を設定します。</td></tr>
+            <tr><th>色</th><td>路線の色を設定します。</td></tr>
+            <tr><th>透過</th><td>路線の透明度を設定します。常に路線全体の設定です。</td></tr>
           </tbody>
         </table>
         <h4>供用中の路線の区分線</h4>
@@ -470,21 +458,19 @@
           </tbody>
         </table>
 
-        <h3 id="manual-h-lanes">区間別の設定（車線数・状態・色）</h3>
-        <figure class="manual-figure" data-figure="tutorial:区間ごとに"><figcaption>区間の始点と終点を選ぶと、その区間だけ車線数（や状態・色）を変えられます</figcaption></figure>
-        <p>1つの路線の中で、一部の区間だけ、車線数・状態・色を変えられます（例：供用中の路線の一部が事業中、暫定2車線の路線の一部だけ4車線、一部だけ違う色）。「設定」タブの「区間別の設定」で、まとめて設定します。</p>
+        <h3 id="manual-h-lanes">区間別の設定（状態・色・車線数・供用形態）</h3>
+        <figure class="manual-figure" data-figure="tutorial:区間ごとに"><figcaption>Ctrl+クリックで区間の両端の点を選ぶと、その区間だけ状態・車線数などを変えられます</figcaption></figure>
+        <p>1つの路線の中で、一部の区間だけ、状態・色・車線数・供用形態を変えられます（例：供用中の路線の一部が事業中、暫定2車線の路線の一部だけ4車線、一部だけ違う色）。専用の欄はなく、上の「路線の見た目」の状態・色・基本の車線数・供用形態を、そのまま使います。</p>
         <ol>
-          <li>「始点を選ぶ」を押して、地図上の点をクリックします。続けて「終点を選ぶ」を押して、地図上の点をクリックします。<span class="kbd">Ctrl</span>+クリックで2点以上を選んでいるときは、「選択中の点から区間を設定」で、最初と最後の点を区間にできます。</li>
-          <li>その区間の車線数・状態・色を選びます（一部だけでもかまいません。色は「この区間の色を変える」にチェックしてから選びます）。</li>
-          <li>「この区間に適用」を押します。</li>
+          <li>地図上で、<span class="kbd">Ctrl</span>（Macは<span class="kbd">Command</span>）を押しながら、区間の両端にする2点以上をクリックします（最初と最後の点が、区間の両端になります）。選ぶと、タブの上部に「点◯〜点◯の区間を編集しています」という案内が表示されます。</li>
+          <li>状態・基本の車線数・供用形態を選びます（一部だけでもかまいません。「変更しない」を選ぶと、その項目は路線全体の設定のままになります）。色を変えるときは「この区間だけ変える」にチェックしてから選びます。選ぶと、その場ですぐに反映されます（「適用」ボタンはありません）。</li>
         </ol>
         <ul>
-          <li>登録した区間は、一覧から個別に削除できます。区間を重ねた場合は、後から登録したものが優先されます。</li>
-          <li>区間を選んでいる間は、地図をクリックしても点は追加されません（<span class="kbd">Esc</span>で取り消せます）。</li>
+          <li>登録した区間は、「区間ごとの設定一覧」から個別に削除できます。区間を重ねた場合は、後から登録したものが優先されます。</li>
           <li>点を追加・削除したり、路線の向きを反転したりしても、登録済みの区間は自動的に追従します。</li>
           <li>状態が違う区間は、地図でも路線図でも、線の種類（実線・破線・点線）が切り替わります。路線図の見出しには、「一部事業中」などのバッジが付きます。</li>
           <li>色が違う区間は、地図でも路線図でも、その区間だけ色が変わります（暫定形の点線の枠も、区間の色に合わせます）。ただし、分岐の線と、施設番号の丸の縁は、区間の色ではなく、路線の基本の色のままです。</li>
-          <li>暫定形の点線の枠と黄色の線は、基本の車線数の区間にだけ表示されます（車線数を変えた区間は、完成した幅として表示されます）。</li>
+          <li>供用形態を「変更しない」にしている区間は、路線全体が暫定形で、かつ、その区間の車線数が路線全体の基本の車線数と同じときだけ、暫定として表示されます（車線数を変えた区間は、完成した幅として表示されます）。区間ごとに、完成形・暫定形を明示的に指定することもできます。</li>
         </ul>
 
         <h3 id="manual-h-ic">施設設定（IC・JCTなど）</h3>
@@ -590,7 +576,7 @@
           <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">Y</span> / <span class="kbd">Ctrl</span> + <span class="kbd">Shift</span> + <span class="kbd">Z</span></td><td>やり直し</td></tr>
           <tr><td><span class="kbd">Ctrl</span> + クリック</td><td>点の複数選択（追加／解除）</td></tr>
           <tr><td><span class="kbd">Delete</span></td><td>選択中の点を削除（ロック中の点を除く）</td></tr>
-          <tr><td><span class="kbd">Esc</span></td><td>選択の解除／区間選択の取り消し</td></tr>
+          <tr><td><span class="kbd">Esc</span></td><td>選択の解除</td></tr>
         </table>
 
         <h3 id="manual-h-trouble">困ったとき</h3>
@@ -598,7 +584,7 @@
           <thead><tr><th>困っていること</th><th>確認すること</th></tr></thead>
           <tbody>
             <tr><th>点を動かせない</th><td>その点がロック中です。点を選んで、地図上の「選択中の点」ツールバーの「ロック」を押し、解除します（始点・終点は、「路線」タブのスイッチをオフにします）。分岐でつないだ点は、どちらかがロック中だと、動かせません。</td></tr>
-            <tr><th>地図をクリックしても、点が追加されない</th><td>終点を決定済みです。「路線」タブの終点の行のスイッチをオフにして、解除します。区間を選んでいる最中のときは、<span class="kbd">Esc</span>で取り消します。</td></tr>
+            <tr><th>地図をクリックしても、点が追加されない</th><td>終点を決定済みです。「路線」タブの終点の行のスイッチをオフにして、解除します。</td></tr>
             <tr><th>施設設定欄が出ない</th><td>点を選んでいますか？点を選ぶと、自動で「設定」タブに「施設設定」欄が開きます。</td></tr>
             <tr><th>路線が「路線図」に表示されない</th><td>点を2つ以上置くと、表示されます。</td></tr>
             <tr><th>「JCT・ICでの分岐」で、分岐元の施設が選べない</th><td>分岐元の路線に、施設を1つ以上設定してください。</td></tr>

@@ -666,6 +666,9 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 .lane-segment-form .segmented { margin-bottom: 8.8px; }
 .lane-segment-form .btn.small { flex: 1; }
 /* 区間別の設定の「色」（v1.52.0-beta）: チェックボックスで有効化してから、色を選ぶ */
+/* 区間モードの案内（v1.53.0-beta）: 2点以上を選んでいる間、状態・色・車線数・供用形態が区間の設定になることを、
+   目立つ色で知らせる（うっかり路線全体を変えたと思って区間だけ変わってしまう／その逆の誤操作を防ぐため） */
+.range-mode-banner { background: var(--color-primary-light); color: var(--color-primary-dark); font-weight: 700; }
 .range-color-row { display: flex; align-items: center; gap: var(--space-2); }
 .range-color-row .checkbox-field { flex: 1 1 auto; }
 .range-color-row input[type="color"] { width: 44px; height: 33px; padding: 2px; border: 1px solid var(--color-control-border); border-radius: var(--radius-sm); background: var(--color-surface); }
@@ -841,6 +844,8 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 /* 車線の区分線と、暫定の枠（道路の要素の中に、位置と色を style で指定して置く） */
 .diagram-lane-line { position: absolute; display: block; pointer-events: none; }
+/* 車線数が変わる境界の継ぎ目（斜めに切ってつなぐ。v1.53.0-beta）。位置・大きさは style で指定する */
+.diagram-lane-taper { position: absolute; display: block; pointer-events: none; }
 .diagram-line-seg.status-construction {
   background: repeating-linear-gradient(to bottom, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
 }
