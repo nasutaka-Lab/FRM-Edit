@@ -1907,10 +1907,9 @@
     recordHistory(true);
   });
 
-  // 色は、区間モードでは「この区間だけ変える」にチェックしたときだけ、区間の色（route.colorSegments）を編集する
-  // （車線数・状態・供用形態と違い、色は無数の値を取りうるので、チェックボックスで明示的に切り替える。v1.53.0-beta）。
-  const colorRangeFieldEl = document.getElementById("color-range-field");
-  const colorRangeEnableEl = document.getElementById("color-range-enable");
+  // 色は、区間モード（2点以上を選んでいる間）は、チェックなどを挟まず、選ぶとその場で区間の色
+  // （route.colorSegments）に反映する（v1.54.1-beta。ユーザー指定。状態・車線数・供用形態と同じ操作感にした）。
+  // 区間の色を外す（路線全体の色に戻す）ときは、「区間ごとの設定一覧」の「削除」を使う。
 
   // input[type=color] のドラッグ中に何度も呼ばれうるので、重い render() は呼ばず、
   // 地図・路線図の再描画と「区間ごとの設定一覧」だけを更新する。
@@ -1925,26 +1924,11 @@
     recordHistory(true);
   }
 
-  colorRangeEnableEl.addEventListener("change", () => {
-    const route = getActiveRoute();
-    const range = currentRangeSelection();
-    if (!route || !range) return;
-    if (colorRangeEnableEl.checked) {
-      routeColorInput.value = route.color;
-      applyColorLive(route, range, routeColorInput.value);
-      render();
-    } else {
-      route.colorSegments = (route.colorSegments || []).filter((s) => !(s.fromIdx === range.fromIdx && s.toIdx === range.toIdx));
-      render();
-    }
-  });
-
   routeColorInput.addEventListener("input", () => {
     const route = getActiveRoute();
     if (!route) return;
     const range = currentRangeSelection();
     if (range) {
-      if (!colorRangeEnableEl.checked) return; // 区間モードでチェックが外れている間は、入力欄自体を無効にしているので、通常ここには来ない
       applyColorLive(route, range, routeColorInput.value);
       return;
     }
@@ -2020,17 +2004,9 @@
 
     renderProvisionalControls(route, range);
 
-    // 色: 区間モードでは「この区間だけ変える」のチェックで切り替える
+    // 色: 区間モードのときは、その区間の色（設定済みならその色、なければ路線全体の色）を表示する
     const colorSeg = range ? (route.colorSegments || []).find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx) : null;
-    colorRangeFieldEl.hidden = !range;
-    if (range) {
-      colorRangeEnableEl.checked = !!colorSeg;
-      routeColorInput.disabled = !colorSeg;
-      routeColorInput.value = colorSeg ? colorSeg.color : route.color;
-    } else {
-      routeColorInput.disabled = false;
-      routeColorInput.value = route.color;
-    }
+    routeColorInput.value = colorSeg ? colorSeg.color : route.color;
 
     renderRangeSegmentsList();
   }

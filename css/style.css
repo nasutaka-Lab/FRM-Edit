@@ -669,10 +669,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 /* 区間モードの案内（v1.53.0-beta）: 2点以上を選んでいる間、状態・色・車線数・供用形態が区間の設定になることを、
    目立つ色で知らせる（うっかり路線全体を変えたと思って区間だけ変わってしまう／その逆の誤操作を防ぐため） */
 .range-mode-banner { background: var(--color-primary-light); color: var(--color-primary-dark); font-weight: 700; }
-.range-color-row { display: flex; align-items: center; gap: var(--space-2); }
-.range-color-row .checkbox-field { flex: 1 1 auto; }
-.range-color-row input[type="color"] { width: 44px; height: 33px; padding: 2px; border: 1px solid var(--color-control-border); border-radius: var(--radius-sm); background: var(--color-surface); }
-.range-color-row input[type="color"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .range-segment-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 4.4px; vertical-align: -1px; border: 1px solid var(--color-border-strong); }
 
 /* ==========================================================================
