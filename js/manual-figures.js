@@ -100,14 +100,10 @@
     [70, 73.5, 77].forEach((y) => (s += `<line x1="304" y1="${y}" x2="316" y2="${y}" stroke="${MUTED}" stroke-width="1.5"/>`));
     s += `<rect x="8" y="60" width="18" height="36" rx="3" fill="#fff" stroke="#c9ccd1"/>` + f.text(17, 74, "+", 11, INK, 700, "middle") + f.text(17, 91, "−", 11, INK, 700, "middle");
     s += btn(8, 246, 40, 16, "凡例", { size: 9 });
-    // サイドバー
+    // サイドバー（編集モードは、タブが「路線」1つだけなので、タブの帯は出さない。v1.53.2-beta）
     s += `<rect x="330" y="52" width="150" height="218" fill="#f6f7f8"/><line x1="330" y1="52" x2="330" y2="${H}" stroke="#e1e4e8"/>`;
-    ["路線", "設定"].forEach((t, i) => {
-      const x = 338 + i * 34;
-      s += f.text(x, 68, t, 9, i === 0 ? PRIMARY : MUTED, 700);
-    });
-    s += `<line x1="336" y1="74" x2="364" y2="74" stroke="${PRIMARY}" stroke-width="2"/><line x1="330" y1="75" x2="480" y2="75" stroke="#e1e4e8"/>`;
-    s += f.text(338, 90, "一般国道・供用中／2車線", 8.5, MUTED, 400);
+    s += f.text(338, 68, "一般国道・供用中／2車線", 8.5, MUTED, 400);
+    s += `<line x1="330" y1="75" x2="480" y2="75" stroke="#e1e4e8"/>`;
     s += `<rect x="338" y="98" width="134" height="72" rx="5" fill="#fff" stroke="#e1e4e8"/>`;
     s += f.text(346, 113, "路線一覧", 8.5, MUTED, 700) + btn(410, 102, 54, 15, "路線を追加", { primary: true, size: 7.5 });
     s += `<rect x="346" y="122" width="118" height="14" rx="3" fill="#dcedc8"/>` + f.text(352, 132, "路線1", 8.5, INK, 700);

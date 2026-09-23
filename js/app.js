@@ -32,11 +32,6 @@
     return nearestValidLanes(lanes) * LANE_WIDTH_PX;
   }
 
-  // 地図で、車線数（太さ）が変わる境界につくる「すぼまり区間」の継ぎ目（v1.53.0-beta。ユーザー指定）。
-  // 長さの目安（m。区間が短いときは、区間の4割までに抑える）と、階段状に近似する分割数。
-  const LANE_TAPER_METERS = 30;
-  const LANE_TAPER_STEPS = 8;
-
   // 区間別車線数: route.laneSegments = [{ id, fromIdx, toIdx, lanes }, ...]
   // 区間別の状態:  route.statusSegments = [{ id, fromIdx, toIdx, status }, ...]（v1.40.0）
   // 区間別の色:    route.colorSegments = [{ id, fromIdx, toIdx, color }, ...]（v1.52.0-beta。ユーザー指定）
@@ -188,7 +183,7 @@
     return currentMap.routes.find((r) => r.id === activeRouteId) || null;
   }
 
-  // サイドバーで、いま開いているタブ（"route" / "look" / "facility"）。
+  // サイドバーで、いま開いているタブ（"route" / "facility"。編集モードは "route" 固定）。
   let sidebarTab = "route";
 
   function clearSelection() {
@@ -214,13 +209,14 @@
   }
 
   // 点のロック。ロック中の点は移動・削除ができない。次の2種類がある。
-  //  - 各点のロック（point.locked。点の右クリックメニューで切り替える）
-  //  - 始点・終点のロック。始点（route.startLocked）は置くと自動でロックされ、終点（route.endLocked）は
-  //    「終点を決定」（終点のスイッチをオン）にしたときにロックされる。どちらも路線パネルのスイッチで解除・再ロックできる。
+  //  - 各点のロック（point.locked。地図上の「選択中の点」ツールバーで切り替える）
+  //  - 終点のロック（route.endLocked）。「終点を決定」（終点のスイッチをオン）にしたときにロックされる。
+  //    路線パネルのスイッチで解除・再ロックできる。
+  //    始点は、v1.53.2-betaで自動ロックを廃止し、他の点と同様に扱う（個別にロックしたいときは、
+  //    地図上の「選択中の点」ツールバーでロックする）。
   // 終点は点が2つ以上のときだけ存在する（1点だけのときは始点のみ）。
   function isEndsLockedIdx(route, idx) {
     const n = route.points.length;
-    if (idx === 0 && route.startLocked) return true;
     return idx === n - 1 && n >= 2 && !!route.endLocked;
   }
 
@@ -236,8 +232,9 @@
 
   // ---------------------------------------------------------------------
   // JCTでの分岐（v1.26.0で、路線グループ（終点と始点の連結）は廃止した）
-  //  - 分岐: route.branchFrom = { routeId, icId, at }。この路線の始点（at: "start"）または終点（"end"）を、
-  //    別の路線（routeId）のJCT（施設 icId。ic.id）から分岐させる。
+  //  - 分岐: route.branchFrom = { routeId, icId, at, mode }。この路線の始点（at: "start"）または終点（"end"）を、
+  //    別の路線（routeId）のJCT（施設 icId。ic.id）から分岐させる。mode は "branch"（分岐。既定）／"straight"
+  //    （順接。v1.55.0-beta。分岐元の路線と同じ直線の続きとして路線図に表示する。始点・終点の施設からだけ設定できる）。
   //  分岐でつないだ点どうしは同じ位置に重ねて置く（つなぐ操作で、分岐する路線の端の点を、JCTの位置に合わせる）。
   //  片方をドラッグすると、もう片方も一緒に動く（jointCluster）。関係の判定は、保存された参照＋「同じ位置にあること」。
   // ---------------------------------------------------------------------
@@ -821,14 +818,7 @@
     const segments = routeLineRefs.get(route.id);
     if (!segments) return;
     segments.forEach((seg) => {
-      if (seg.taperK != null) {
-        // 車線数が変わる境界の継ぎ目（すぼまり区間）。ドラッグ中も、隣り合う2点から作り直す
-        updateLaneTaper(route, seg);
-        return;
-      }
       const latlngs = buildRenderedLatLngsRange(route, seg.startIdx, seg.endIdx);
-      if (seg.taperEndIdx != null) latlngs[latlngs.length - 1] = laneTaperLatLng(route, seg.taperEndIdx, -1);
-      if (seg.taperStartIdx != null) latlngs[0] = laneTaperLatLng(route, seg.taperStartIdx, 1);
       seg.line.setLatLngs(latlngs);
       seg.dividers.forEach((d) => d.setLatLngs(latlngs));
     });
@@ -837,69 +827,6 @@
   // route.points の [startIdx, endIdx] 区間の、描画用の緯度経度列（点を、直線で結ぶ）
   function buildRenderedLatLngsRange(route, startIdx, endIdx) {
     return route.points.slice(startIdx, endIdx + 1).map((p) => [p.lat, p.lng]);
-  }
-
-  // 車線数が変わる境界（点 k）の、継ぎ目（すぼまり区間）の端になる地点。
-  // dir=-1: k の手前（k-1〜k の間）／dir=+1: k の先（k〜k+1 の間）。隣り合う2点だけで求めるので、
-  // ドラッグ中の再計算も軽い（v1.53.0-beta。ユーザー指定〔地図の「案B」〕）。
-  function laneTaperLatLng(route, k, dir) {
-    const b = route.points[k];
-    const other = route.points[k + dir];
-    const segLen = distanceMeters(b, other);
-    if (!(segLen > 0)) return [b.lat, b.lng];
-    const cut = Math.min(LANE_TAPER_METERS, segLen * 0.4); // 区間が短いときは、区間の4割までに抑える
-    const frac = cut / segLen;
-    return [b.lat + (other.lat - b.lat) * frac, b.lng + (other.lng - b.lng) * frac];
-  }
-
-  // route の区間（buildLaneRanges() の戻り値）のうち、車線数（太さ）が変わる境界の一覧。
-  // 継ぎ目（すぼまり区間）を作る場所（{ k: 境界の点index, wA, wB: 前後の太さ, colorA, colorB: 前後の色 }）。
-  function laneTaperBoundaries(ranges) {
-    const list = [];
-    for (let i = 0; i < ranges.length - 1; i++) {
-      const wA = laneWeight(ranges[i].lanes);
-      const wB = laneWeight(ranges[i + 1].lanes);
-      if (wA !== wB) list.push({ k: ranges[i].endIdx, wA, wB, colorA: ranges[i].color, colorB: ranges[i + 1].color });
-    }
-    return list;
-  }
-
-  // 継ぎ目（すぼまり区間）を、太さが段階的に変わる短いポリラインを並べて描く（L.polyline の weight は
-  // 1本につき一定のため、細かく分けて「階段状」に近似する。LANE_TAPER_STEPS を増やすほどなめらかになる）。
-  function drawLaneTaper(route, k) {
-    const before = laneTaperLatLng(route, k, -1);
-    const after = laneTaperLatLng(route, k, 1);
-    const lines = [];
-    for (let i = 0; i < LANE_TAPER_STEPS; i++) {
-      const line = L.polyline([before, after], { interactive: false, lineCap: "butt" });
-      line.addTo(routesLayer);
-      lines.push(line);
-    }
-    const seg = { taperK: k, lines };
-    updateLaneTaper(route, seg);
-    return seg;
-  }
-
-  // 継ぎ目（すぼまり区間）の位置・太さ・色を、いまの route.points（ドラッグ中も）に合わせて更新する
-  function updateLaneTaper(route, seg) {
-    const tb = laneTaperBoundaries(buildLaneRanges(route)).find((t) => t.k === seg.taperK);
-    if (!tb) return; // 区間別の設定が変わり、この境界がもう無くなっていたら、何もしない（次の再描画で消える）
-    const before = laneTaperLatLng(route, tb.k, -1);
-    const after = laneTaperLatLng(route, tb.k, 1);
-    const opacity = route.opacity;
-    const steps = seg.lines.length;
-    seg.lines.forEach((line, i) => {
-      const f0 = i / steps;
-      const f1 = (i + 1) / steps;
-      const p0 = [before[0] + (after[0] - before[0]) * f0, before[1] + (after[1] - before[1]) * f0];
-      const p1 = [before[0] + (after[0] - before[0]) * f1, before[1] + (after[1] - before[1]) * f1];
-      line.setLatLngs([p0, p1]);
-      line.setStyle({
-        weight: tb.wA + (tb.wB - tb.wA) * ((f0 + f1) / 2),
-        color: (f0 + f1) / 2 < 0.5 ? tb.colorA : tb.colorB,
-        opacity,
-      });
-    });
   }
 
   // 頂点・中間点マーカー専用ペイン。IC/JCTマーカー（デフォルトのmarkerPane）より
@@ -924,8 +851,8 @@
     renderMapLayers();
     renderRouteList();
     renderRouteProps();
-    renderLinkPanel(); // 「路線」タブの「JCT・ICでの分岐」欄
-    renderFacilitySettings(); // 「設定」タブの「施設設定」欄（点を選んでいるときだけ）
+    renderLinkPanel(); // サイドバーの「JCT・ICでの分岐」欄（折りたたみ）
+    renderFacilitySettings(); // サイドバーの「施設設定」欄（点を選んでいるときだけ）
     renderPointToolbar(); // 地図に重ねる「選択中の点」ツールバー
     renderMapHint();
     if (currentMode === "diagram") renderRouteDiagram();
@@ -956,20 +883,11 @@
         // 区間別の車線数・状態・色により、1つの路線を、車線数も状態も色も一定の区間
         // （レンジ）に分割し、区間ごとに太さ・線種・色の異なるポリラインとして描画する。
         const ranges = buildLaneRanges(route);
-        // 車線数（太さ）が変わる境界には、直角の段差ではなく、短い「すぼまり区間」の継ぎ目を作る
-        // （v1.53.0-beta。ユーザー指定〔地図の「案B」〕）。区間の線は、境界の少し手前・先で止める。
-        const taperBoundaries = laneTaperBoundaries(ranges);
-        const taperByEndIdx = new Map(taperBoundaries.map((t) => [t.k, t]));
-        const taperByStartIdx = new Map(taperBoundaries.map((t) => [t.k, t]));
         const segments = [];
 
         ranges.forEach((range) => {
           const status = STATUSES[range.status] || STATUSES.inservice;
           const latlngs = buildRenderedLatLngsRange(route, range.startIdx, range.endIdx);
-          const hasEndTaper = taperByEndIdx.has(range.endIdx);
-          const hasStartTaper = taperByStartIdx.has(range.startIdx);
-          if (hasEndTaper) latlngs[latlngs.length - 1] = laneTaperLatLng(route, range.endIdx, -1);
-          if (hasStartTaper) latlngs[0] = laneTaperLatLng(route, range.startIdx, 1);
           const weight = laneWeight(range.lanes);
           const dashArray = status.dashArray(weight);
           const line = L.polyline(latlngs, {
@@ -978,8 +896,7 @@
             opacity: route.opacity,
             dashArray: dashArray,
             // 丸い線端だと太い線でダッシュ同士が重なって潰れて見えるため、破線・点線のときは端を角形にする。
-            // 継ぎ目（すぼまり区間）に接する端も、丸い縁が継ぎ目にはみ出さないよう角形にする。
-            lineCap: dashArray || hasEndTaper || hasStartTaper ? "butt" : "round",
+            lineCap: dashArray ? "butt" : "round",
           });
           line.on("click", (e) => {
             L.DomEvent.stop(e);
@@ -993,17 +910,8 @@
           // 区分線を重ねて車線数そのものを視覚化する（供用中の道路のみ）。暫定の枠の色は、この区間の色。
           const dividers = range.status === "inservice" ? drawLaneDividers(latlngs, route, range.lanes, weight, range.color, range.provisional) : [];
 
-          segments.push({
-            startIdx: range.startIdx,
-            endIdx: range.endIdx,
-            line,
-            dividers,
-            taperEndIdx: hasEndTaper ? range.endIdx : null,
-            taperStartIdx: hasStartTaper ? range.startIdx : null,
-          });
+          segments.push({ startIdx: range.startIdx, endIdx: range.endIdx, line, dividers });
         });
-
-        taperBoundaries.forEach((tb) => segments.push(drawLaneTaper(route, tb.k)));
 
         routeLineRefs.set(route.id, segments);
       }
@@ -1301,7 +1209,7 @@
     if (!route) return;
     // 終点が決定（ロック）済みのときは、末尾への点の追加はできない（解除すると追加できる）。
     if (route.endLocked && route.points.length >= 2) {
-      toast("終点が決定済みです。「路線」タブで終点のロックを解除すると、末尾に点を追加できます", "error");
+      toast("終点が決定済みです。サイドバーで終点のロックを解除すると、末尾に点を追加できます", "error");
       return;
     }
     route.points.push({ lat: e.latlng.lat, lng: e.latlng.lng });
@@ -1340,7 +1248,8 @@
           ? `<span class="route-tag">${provisionalLabel(route)}</span>`
           : "";
       const trunk = route.branchFrom ? routeById(route.branchFrom.routeId) : null;
-      const branchTag = trunk ? `<span class="route-tag" title="${escapeHtml(trunk.name || "")}から分岐">分岐</span>` : "";
+      const branchWord = route.branchFrom && route.branchFrom.mode === "straight" ? "順接" : "分岐";
+      const branchTag = trunk ? `<span class="route-tag" title="${escapeHtml(trunk.name || "")}から${branchWord}">${branchWord}</span>` : "";
       div.innerHTML = `<span class="swatch" style="background:${route.color}"></span><span class="name">${escapeHtml(
         route.name || "(無名の路線)"
       )}</span>${tag}${branchTag}`;
@@ -1380,7 +1289,6 @@
       color: CATEGORIES.national.color,
       lanes: lanes,
       provisional: false,
-      startLocked: true, // 始点は、置くと自動でロックする（動かすには、路線パネルで解除する）
       endLocked: false, // 終点は、「終点を決定」を押すまでロックしない（描画中は末尾に点を追加できる）
       weight: laneWeight(lanes),
       opacity: 1,
@@ -1407,7 +1315,8 @@
     if (route.branchFrom) route.branchFrom.at = route.branchFrom.at === "end" ? "start" : "end"; // 分岐している端も入れ替わる
     const n = route.points.length;
     route.points.reverse();
-    [route.startLocked, route.endLocked] = [!!route.endLocked, !!route.startLocked]; // ロックも始点・終点と一緒に入れ替える
+    // endLocked は「この路線の描画が完了しているか」を表す路線単位の状態なので、向き反転では変えない
+    // （各点の locked は points 配列と一緒に反転されるので、そのまま追従する）
     route.ics.forEach((ic) => {
       ic.pointIndex = n - 1 - ic.pointIndex;
     });
@@ -1435,14 +1344,19 @@
   });
 
   // ---------------------------------------------------------------------
-  // サイドバー: JCT・ICでの分岐（「路線」タブの「JCT・ICでの分岐」欄）
+  // サイドバー: JCT・ICでの分岐（「JCT・ICでの分岐」欄。折りたたみ式。v1.53.2-beta）
   // 分岐する路線の端の点を、分岐元の施設（JCT・IC）の位置に合わせて重ねる。
   // ---------------------------------------------------------------------
   const linkPanelEl = document.getElementById("link-panel");
+  const linkSummaryEl = document.getElementById("link-summary");
   const linkBodyEl = document.getElementById("link-body");
   // 分岐の欄の状態。fac: 分岐元の施設（"路線のid#点の番号"）、at: この路線の分岐する端、
-  // atAuto: 端を、施設に近い端に自動で決めているか、newFac: 新しい路線を分岐させる施設（この路線の点の番号）、focus: 地図に赤い輪で示す施設（"fac" / "new"）
-  let linkUi = { fac: "", at: "start", atAuto: true, newFac: "", focus: "fac" };
+  // atAuto: 端を、施設に近い端に自動で決めているか、newFac: 新しい路線を分岐させる施設（この路線の点の番号）、focus: 地図に赤い輪で示す施設（"fac" / "new"）、
+  // mode/newMode: 「分岐」／「順接」（v1.55.0-beta。ユーザー指定）
+  let linkUi = { fac: "", at: "start", atAuto: true, newFac: "", focus: "fac", mode: "branch", newMode: "branch" };
+  // JCT・ICでの分岐欄は折りたたみ式（v1.53.2-beta）。路線を切り替えた直後だけ、分岐の有無で開閉の既定を決め、
+  // そのあとはユーザーが自分で開閉した状態を保つ（renderLinkPanel は編集のたびに呼ばれるため、毎回は開閉し直さない）
+  let linkPanelOpenForRoute = null;
   // 選んだ施設の場所を、地図に赤い輪で示すレイヤー
   const branchPreviewLayer = L.layerGroup().addTo(map);
 
@@ -1450,13 +1364,31 @@
     return r.name || "(無名の路線)";
   }
 
+  // 「順接」（v1.55.0-beta。ユーザー指定）: 分岐ではなく、分岐元の路線と同じ直線の続きとして路線図に表示する。
+  // 分岐元の施設が、その路線自身の始点または終点そのもの（途中の施設ではない）のときだけ選べる
+  // （途中の施設だと、本線自身の続きと、順接した路線の続きが、路線図の同じ位置を取り合ってしまうため）。
+  function canBeStraightSource(trunk, ic) {
+    return !!ic && (ic.pointIndex === 0 || ic.pointIndex === trunk.points.length - 1);
+  }
+
+  // 1つの施設から「順接」できる路線は1本まで（分岐は、これまでどおり複数可）
+  function hasStraightChild(trunk, ic, exceptRouteId) {
+    return currentMap.routes.some(
+      (r) => r.id !== exceptRouteId && r.branchFrom && r.branchFrom.routeId === trunk.id && r.branchFrom.icId === ic.id && r.branchFrom.mode === "straight"
+    );
+  }
+
   // route の始点（at: "start"）または終点（"end"）を、trunk の pointIndex 番目のJCTから分岐させる。
-  // 戻り値: エラーの文（成功なら null）
-  function setBranch(route, trunk, jctPointIndex, at) {
+  // mode: "branch"（既定）／"straight"（順接）。戻り値: エラーの文（成功なら null）
+  function setBranch(route, trunk, jctPointIndex, at, mode) {
     if (route.id === trunk.id) return "同じ路線には分岐できません";
     if (route.points.length === 0) return "点のない路線は分岐させられません";
     const ic = trunk.ics.find((x) => x.pointIndex === jctPointIndex);
     if (!ic) return "分岐元の施設を選んでください";
+    if (mode === "straight") {
+      if (!canBeStraightSource(trunk, ic)) return "順接は、分岐元の路線の始点または終点の施設からだけ設定できます";
+      if (hasStraightChild(trunk, ic)) return "この施設からは、すでに別の路線が順接しています（順接は1つの施設につき1本までです）";
+    }
     let cur = trunk;
     for (let guard = 0; cur && cur.branchFrom && guard < 50; guard++) {
       if (cur.branchFrom.routeId === route.id) return "分岐がぐるぐる回る組み合わせにはできません";
@@ -1466,7 +1398,22 @@
     const p = route.points[at === "end" ? route.points.length - 1 : 0];
     p.lat = tp.lat;
     p.lng = tp.lng;
-    route.branchFrom = { routeId: trunk.id, icId: ensureIcId(ic), at };
+    route.branchFrom = { routeId: trunk.id, icId: ensureIcId(ic), at, mode: mode === "straight" ? "straight" : "branch" };
+    return null;
+  }
+
+  // 分岐先・分岐する端は変えず、「分岐」「順接」の種類だけを切り替える。戻り値: エラーの文（成功なら null）
+  function setBranchMode(route, mode) {
+    const bf = route.branchFrom;
+    if (!bf) return "分岐していません";
+    const trunk = routeById(bf.routeId);
+    const ic = trunk && icById(trunk, bf.icId);
+    if (!trunk || !ic) return "分岐元が見つかりません";
+    if (mode === "straight") {
+      if (!canBeStraightSource(trunk, ic)) return "順接は、分岐元の路線の始点または終点の施設からだけ設定できます";
+      if (hasStraightChild(trunk, ic, route.id)) return "この施設からは、すでに別の路線が順接しています（順接は1つの施設につき1本までです）";
+    }
+    bf.mode = mode === "straight" ? "straight" : "branch";
     return null;
   }
 
@@ -1527,11 +1474,26 @@
     let ringTarget = null; // 赤い輪で示す施設 { route, ic }
     const bf = route.branchFrom;
     const trunkNow = bf ? routeById(bf.routeId) : null;
+    const kids = currentMap.routes.filter((r) => r.branchFrom && r.branchFrom.routeId === route.id);
+    const hasBranch = !!(bf && trunkNow) || kids.length > 0;
+    if (linkPanelOpenForRoute !== route.id) {
+      linkPanelOpenForRoute = route.id;
+      linkPanelEl.open = hasBranch;
+    }
+    linkSummaryEl.innerHTML = `JCT・ICでの分岐<span class="acc-summary">${hasBranch ? "分岐あり" : ""}</span>`;
     if (bf && trunkNow) {
       // すでに分岐しているとき
       const ic = icById(trunkNow, bf.icId);
+      const mode = bf.mode === "straight" ? "straight" : "branch";
+      const canStraight = canBeStraightSource(trunkNow, ic);
       html +=
-        `<p class="link-branch-now">「${escapeHtml(routeLabel(trunkNow))}」の「${escapeHtml((ic && ic.name) || "(無名)")}」から分岐しています（この路線の${bf.at === "end" ? "終点" : "始点"}側）</p>` +
+        `<p class="link-branch-now">「${escapeHtml(routeLabel(trunkNow))}」の「${escapeHtml((ic && ic.name) || "(無名)")}」から${mode === "straight" ? "順接" : "分岐"}しています（この路線の${bf.at === "end" ? "終点" : "始点"}側）</p>` +
+        '<div class="field"><label>種類</label><div id="branch-mode-now" class="segmented" role="group">' +
+        `<button type="button" data-mode="branch" class="${mode === "branch" ? "active" : ""}">分岐</button>` +
+        `<button type="button" data-mode="straight" class="${mode === "straight" ? "active" : ""}"${canStraight ? "" : " disabled"}>順接</button>` +
+        "</div>" +
+        (canStraight ? "" : '<p class="hint-text">順接は、この施設が、分岐元の路線の始点または終点のときだけ選べます。</p>') +
+        "</div>" +
         '<div class="btn-row"><button id="btn-show-branch" type="button" class="btn ghost small">分岐元を地図で見る</button>' +
         '<button id="btn-clear-branch" type="button" class="btn ghost small">分岐を解除する</button></div>';
     } else {
@@ -1547,6 +1509,8 @@
         const cur = parseFacKey(linkUi.fac);
         if (linkUi.atAuto && cur) linkUi.at = nearerEnd(route, cur.route.points[cur.ic.pointIndex]);
         if (cur && linkUi.focus === "fac") ringTarget = cur;
+        const canStraight = !!cur && canBeStraightSource(cur.route, cur.ic) && !hasStraightChild(cur.route, cur.ic);
+        if (!canStraight) linkUi.mode = "branch"; // 選べないときは「分岐」に戻す
         const endName = (v) => (v === "start" ? "始点" : "終点");
         const twoPoints = route.points.length >= 2;
         html +=
@@ -1568,9 +1532,15 @@
           "</div>" +
           (twoPoints && linkUi.atAuto ? `<p class="hint-text link-at-note">施設に近い${endName(linkUi.at)}を選んでいます。変えるときは、押してください。</p>` : "") +
           "</div>" +
-          '<button id="btn-set-branch" type="button" class="btn primary small full">この路線をこの施設から分岐させる</button>';
+          '<div class="field"><label>種類</label><div id="branch-mode" class="segmented" role="group">' +
+          `<button type="button" data-mode="branch" class="${linkUi.mode === "branch" ? "active" : ""}">分岐</button>` +
+          `<button type="button" data-mode="straight" class="${linkUi.mode === "straight" ? "active" : ""}"${canStraight ? "" : " disabled"}>順接</button>` +
+          "</div>" +
+          (canStraight ? "" : '<p class="hint-text">順接は、選んだ施設が、その路線の始点または終点で、まだ他の路線が順接していないときだけ選べます。</p>') +
+          "</div>" +
+          `<button id="btn-set-branch" type="button" class="btn primary small full">この路線をこの施設${linkUi.mode === "straight" ? "に順接させる" : "から分岐させる"}</button>`;
       } else {
-        html += '<p class="hint-text">分岐元にできる施設がありません。別の路線の点を選び、「設定」タブの「施設設定」で、施設を設定してください。</p>';
+        html += '<p class="hint-text">分岐元にできる施設がありません。別の路線の点を選ぶと開く「施設設定」で、施設を設定してください。</p>';
       }
     }
 
@@ -1580,16 +1550,23 @@
       if (!own.some((ic) => String(ic.pointIndex) === String(linkUi.newFac))) linkUi.newFac = String(own[0].pointIndex);
       const ownCur = own.find((ic) => String(ic.pointIndex) === String(linkUi.newFac));
       if (ownCur && linkUi.focus === "new") ringTarget = { route, ic: ownCur };
+      const newCanStraight = !!ownCur && canBeStraightSource(route, ownCur) && !hasStraightChild(route, ownCur);
+      if (!newCanStraight) linkUi.newMode = "branch";
       html +=
         '<div class="link-sub"><div class="link-sub-title">この路線から、新しい路線を分岐させる</div>' +
         '<p class="hint-text">選んだ施設を始点にした、新しい路線を作ります。作ったあと、地図をクリックして、路線を描いてください。</p>' +
         '<div class="field"><label>分岐させる施設</label><select id="newbranch-fac">' +
         own.map((ic) => `<option value="${ic.pointIndex}"${String(ic.pointIndex) === String(linkUi.newFac) ? " selected" : ""}>${escapeHtml(facLabel(route, ic))}</option>`).join("") +
         "</select></div>" +
+        '<div class="field"><label>種類</label><div id="newbranch-mode" class="segmented" role="group">' +
+        `<button type="button" data-mode="branch" class="${linkUi.newMode === "branch" ? "active" : ""}">分岐</button>` +
+        `<button type="button" data-mode="straight" class="${linkUi.newMode === "straight" ? "active" : ""}"${newCanStraight ? "" : " disabled"}>順接</button>` +
+        "</div>" +
+        (newCanStraight ? "" : '<p class="hint-text">順接は、選んだ施設が、この路線の始点または終点で、まだ他の路線が順接していないときだけ選べます。</p>') +
+        "</div>" +
         '<button id="btn-new-branch" type="button" class="btn ghost small full">この施設から、新しい路線を作る</button></div>';
     }
 
-    const kids = currentMap.routes.filter((r) => r.branchFrom && r.branchFrom.routeId === route.id);
     if (kids.length) {
       html +=
         '<div class="link-kids"><div class="muted">この路線から分岐している路線</div>' +
@@ -1620,6 +1597,16 @@
         showBranchRing(trunkNow, ic, false);
       });
     }
+    if ($("#branch-mode-now")) {
+      linkBodyEl.querySelectorAll("#branch-mode-now button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          const err = setBranchMode(route, btn.dataset.mode);
+          if (err) return toast(err, "error");
+          render();
+        });
+      });
+    }
     if ($("#branch-fac")) {
       $("#branch-fac").addEventListener("change", (e) => {
         linkUi.fac = e.target.value;
@@ -1634,12 +1621,23 @@
           renderLinkPanel();
         });
       });
+      linkBodyEl.querySelectorAll("#branch-mode button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          linkUi.mode = btn.dataset.mode;
+          renderLinkPanel();
+        });
+      });
       $("#btn-set-branch").addEventListener("click", () => {
         const t = parseFacKey(linkUi.fac);
         if (!t) return;
-        const err = setBranch(route, t.route, t.ic.pointIndex, linkUi.at);
+        const err = setBranch(route, t.route, t.ic.pointIndex, linkUi.at, linkUi.mode);
         if (err) return toast(err, "error");
-        toast("分岐を設定しました（この路線の端の点を、分岐元の施設の位置に合わせました）");
+        toast(
+          linkUi.mode === "straight"
+            ? "順接を設定しました（この路線の端の点を、分岐元の施設の位置に合わせました）"
+            : "分岐を設定しました（この路線の端の点を、分岐元の施設の位置に合わせました）"
+        );
         render();
       });
     }
@@ -1649,19 +1647,29 @@
         linkUi.focus = "new";
         renderLinkPanel(true);
       });
+      linkBodyEl.querySelectorAll("#newbranch-mode button").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          if (btn.disabled) return;
+          linkUi.newMode = btn.dataset.mode;
+          renderLinkPanel();
+        });
+      });
       $("#btn-new-branch").addEventListener("click", () => {
         const ic = own.find((x) => String(x.pointIndex) === String(linkUi.newFac));
         const p = ic && route.points[ic.pointIndex];
         if (!p) return;
+        if (linkUi.newMode === "straight" && hasStraightChild(route, ic)) {
+          return toast("この施設からは、すでに別の路線が順接しています（順接は1つの施設につき1本までです）", "error");
+        }
         const child = newRouteObject();
-        child.points = [{ lat: p.lat, lng: p.lng }]; // 始点は、分岐元の施設の位置（置いた点は、自動でロックされる）
-        child.branchFrom = { routeId: route.id, icId: ensureIcId(ic), at: "start" };
+        child.points = [{ lat: p.lat, lng: p.lng }]; // 始点は、分岐元の施設の位置
+        child.branchFrom = { routeId: route.id, icId: ensureIcId(ic), at: "start", mode: linkUi.newMode === "straight" ? "straight" : "branch" };
         currentMap.routes.push(child);
         activeRouteId = child.id;
         clearSelection();
         sidebarTab = "route";
         render();
-        toast(`「${child.name}」を、${ic.name || "(無名)"}から分岐させました。地図をクリックして、路線を描いてください`);
+        toast(`「${child.name}」を、${ic.name || "(無名)"}から${linkUi.newMode === "straight" ? "順接させました" : "分岐させました"}。地図をクリックして、路線を描いてください`);
       });
     }
     linkBodyEl.querySelectorAll(".link-kid").forEach((btn) => {
@@ -1787,16 +1795,9 @@
     });
   });
 
-  // 始点・終点の手順（①始点を置く → ②路線を順に描く → ③終点を決定）と、ロックの切替。
-  const lockStartBtn = document.getElementById("btn-lock-start");
+  // 始点を置く → 路線を順に描く → 終点を決定、の流れのうち、「終点を決定」のロックの切替。
+  // （始点は、v1.53.2-betaで自動ロックを廃止したので、専用のスイッチはない）
   const decideEndBtn = document.getElementById("btn-decide-end");
-
-  lockStartBtn.addEventListener("click", () => {
-    const route = getActiveRoute();
-    if (!route) return;
-    route.startLocked = !route.startLocked;
-    render();
-  });
 
   decideEndBtn.addEventListener("click", () => {
     const route = getActiveRoute();
@@ -1825,20 +1826,16 @@
 
   function renderLockControls(route) {
     const n = route.points.length;
-    const startState = n === 0 ? "未設定" : route.startLocked ? "ロック中" : "ロック解除中";
     const endState = n < 2 ? "未設定" : route.endLocked ? "決定済み（ロック中）" : "未決定（描画中）";
     const setState = (id, text, cls) => {
       const el = document.getElementById(id);
       el.textContent = text;
       el.className = "ep-state" + (cls ? " " + cls : "");
     };
-    setState("ep-start-state", startState, route.startLocked && n > 0 ? "locked" : "");
     setState("ep-end-state", endState, route.endLocked && n >= 2 ? "locked" : n >= 2 ? "pending" : "");
-    // オン＝ロック中（始点）／決定済み（終点）。トグルスイッチ（role="switch"）で切り替える
-    lockStartBtn.setAttribute("aria-checked", String(!!route.startLocked));
+    // オン＝決定済み。トグルスイッチ（role="switch"）で切り替える
     decideEndBtn.setAttribute("aria-checked", String(!!route.endLocked));
     decideEndBtn.disabled = !route.endLocked && n < 2; // 点が2つ未満のときは、終点を決定できない
-    lockStartBtn.title = route.startLocked ? "オフにすると、始点のロックを解除します" : "オンにすると、始点をロックします";
     decideEndBtn.title = route.endLocked ? "オフにすると、終点のロックを解除します" : n < 2 ? "点を2つ以上置くと、終点を決定できます" : "オンにすると、最後の点を終点として決定（ロック）します";
   }
 
@@ -1907,10 +1904,9 @@
     recordHistory(true);
   });
 
-  // 色は、区間モードでは「この区間だけ変える」にチェックしたときだけ、区間の色（route.colorSegments）を編集する
-  // （車線数・状態・供用形態と違い、色は無数の値を取りうるので、チェックボックスで明示的に切り替える。v1.53.0-beta）。
-  const colorRangeFieldEl = document.getElementById("color-range-field");
-  const colorRangeEnableEl = document.getElementById("color-range-enable");
+  // 色は、区間モード（2点以上を選んでいる間）は、チェックなどを挟まず、選ぶとその場で区間の色
+  // （route.colorSegments）に反映する（v1.54.1-beta。ユーザー指定。状態・車線数・供用形態と同じ操作感にした）。
+  // 区間の色を外す（路線全体の色に戻す）ときは、「区間ごとの設定一覧」の「削除」を使う。
 
   // input[type=color] のドラッグ中に何度も呼ばれうるので、重い render() は呼ばず、
   // 地図・路線図の再描画と「区間ごとの設定一覧」だけを更新する。
@@ -1925,26 +1921,11 @@
     recordHistory(true);
   }
 
-  colorRangeEnableEl.addEventListener("change", () => {
-    const route = getActiveRoute();
-    const range = currentRangeSelection();
-    if (!route || !range) return;
-    if (colorRangeEnableEl.checked) {
-      routeColorInput.value = route.color;
-      applyColorLive(route, range, routeColorInput.value);
-      render();
-    } else {
-      route.colorSegments = (route.colorSegments || []).filter((s) => !(s.fromIdx === range.fromIdx && s.toIdx === range.toIdx));
-      render();
-    }
-  });
-
   routeColorInput.addEventListener("input", () => {
     const route = getActiveRoute();
     if (!route) return;
     const range = currentRangeSelection();
     if (range) {
-      if (!colorRangeEnableEl.checked) return; // 区間モードでチェックが外れている間は、入力欄自体を無効にしているので、通常ここには来ない
       applyColorLive(route, range, routeColorInput.value);
       return;
     }
@@ -2020,23 +2001,15 @@
 
     renderProvisionalControls(route, range);
 
-    // 色: 区間モードでは「この区間だけ変える」のチェックで切り替える
+    // 色: 区間モードのときは、その区間の色（設定済みならその色、なければ路線全体の色）を表示する
     const colorSeg = range ? (route.colorSegments || []).find((s) => s.fromIdx === range.fromIdx && s.toIdx === range.toIdx) : null;
-    colorRangeFieldEl.hidden = !range;
-    if (range) {
-      colorRangeEnableEl.checked = !!colorSeg;
-      routeColorInput.disabled = !colorSeg;
-      routeColorInput.value = colorSeg ? colorSeg.color : route.color;
-    } else {
-      routeColorInput.disabled = false;
-      routeColorInput.value = route.color;
-    }
+    routeColorInput.value = colorSeg ? colorSeg.color : route.color;
 
     renderRangeSegmentsList();
   }
 
   // ---------------------------------------------------------------------
-  // サイドバー: 点・施設設定（旧「点」タブ。v1.51.0-beta で、「設定」タブに統合した）
+  // サイドバー: 点・施設設定（旧「点」タブ。v1.51.0-beta で「設定」タブに統合、v1.53.2-beta でさらにサイドバー本体に統合した）
   // ---------------------------------------------------------------------
   const facilitySettingsSectionEl = document.getElementById("facility-settings-section");
   const facilitySettingsHintEl = document.getElementById("facility-settings-hint");
@@ -2245,7 +2218,7 @@
     });
   }
 
-  // 「設定」タブの「施設設定」欄（旧「点」タブ・旧「IC・JCTを設定」）。
+  // サイドバーの「施設設定」欄（旧「点」タブ・旧「IC・JCTを設定」）。
   // v1.51.0-beta で、右クリックメニューを廃止し、点を選んでいるときだけ、常設のタブに表示するように変更した。
   function renderFacilitySettings() {
     const route = getActiveRoute();
@@ -2344,11 +2317,12 @@
   function visibleSidebarTabs(route) {
     if (!route) return ["route"];
     if (currentMode === "diagram") return ["route", "facility"];
-    return ["route", "look"];
+    return ["route"]; // 編集モードは、v1.53.2-betaで「路線」「設定」タブを1つに統合した（タブが1つだけなので帯ごと出さない）
   }
   const sidebarTabsEl = document.getElementById("sidebar-tabs");
   const sidebarSummaryEl = document.getElementById("sidebar-summary");
   const routeDetailPanelEl = document.getElementById("route-detail-panel");
+  const routeSettingsEl = document.getElementById("route-settings");
 
   function renderSidebarTabs() {
     const route = getActiveRoute();
@@ -2371,7 +2345,8 @@
       pane.setAttribute("role", "tabpanel");
       pane.setAttribute("aria-labelledby", "sidebar-tab-" + pane.dataset.pane);
     });
-    routeDetailPanelEl.hidden = currentMode !== "edit" || !route; // 路線の名前・向き反転・削除・始点終点は、編集モードで路線を選んでいるときだけ
+    routeDetailPanelEl.hidden = currentMode !== "edit" || !route; // 路線の名前・向き反転・削除・終点の状態は、編集モードで路線を選んでいるときだけ
+    routeSettingsEl.hidden = currentMode !== "edit" || !route; // 見た目・車線・区間別の設定・施設設定も同様
     sidebarSummaryEl.hidden = !(route && currentMode === "edit");
   }
 
@@ -2462,7 +2437,7 @@
     scope.innerHTML = `対象の路線: <b>${escapeHtml(routeLabel(route))}</b><br>他の路線の施設は、路線図の見出しをクリックして、その路線を選ぶと設定できます`;
     facilityListEl.appendChild(scope);
     if (data.entries.length === 0) {
-      facilityListEl.insertAdjacentHTML("beforeend", '<div class="empty-msg">施設（IC・JCT・SA/PAなど）が未設定です。編集モードで点を選び、「設定」タブの「施設設定」で設定してください</div>');
+      facilityListEl.insertAdjacentHTML("beforeend", '<div class="empty-msg">施設（IC・JCT・SA/PAなど）が未設定です。編集モードで点を選ぶと開く「施設設定」で設定してください</div>');
       return;
     }
     data.entries.forEach((fac) => {
@@ -2510,7 +2485,7 @@
       item.querySelector(".fac-goto").addEventListener("click", () => {
         setMode("edit");
         selectOnly(ic.pointIndex);
-        sidebarTab = "look"; // 施設設定は「設定」タブに、点を選ぶと自動で表示される
+        sidebarTab = "route"; // 施設設定は、点を選ぶとサイドバーに自動で表示される
         const pt = fac.route.points[ic.pointIndex];
         if (pt) map.panTo([pt.lat, pt.lng]);
         render();
@@ -2692,34 +2667,6 @@
   const DIAGRAM_LANE_PX = 5;
   const diagramLineWidth = (lanes) => nearestValidLanes(lanes) * DIAGRAM_LANE_PX;
 
-  // 車線数が変わる境界の継ぎ目（斜めに切ってつなぐ）の、片側の長さ（px。v1.53.0-beta。ユーザー指定）
-  const LANE_TAPER_PX = 8;
-
-  // 太さが変わる境界を、直角の段差ではなく、斜めのSVGの四角形2枚（それぞれの区間の色）でつなぐ。
-  // c = { boundary, t, wA, wB, colorA, colorB }（boundary: 境界の位置、t: 継ぎ目の片側の長さ、
-  // wA/wB: 境界の前後の太さ、colorA/colorB: 境界の前後の色）。H: 横向きの図か。lineY: 横向きのときの、線の中心の位置。
-  function laneTaperSvg(c, H, lineY) {
-    const { boundary, t, wA, wB, colorA, colorB } = c;
-    const wMid = (wA + wB) / 2;
-    const maxW = Math.max(wA, wB);
-    if (H) {
-      // 横向きの図: 継ぎ目は縦の帯（左右にt、上下にmaxW/2）
-      const left = boundary - t;
-      const top = lineY - maxW / 2;
-      const cy = maxW / 2;
-      const polyA = `${0},${cy - wA / 2} ${t},${cy - wMid / 2} ${t},${cy + wMid / 2} ${0},${cy + wA / 2}`;
-      const polyB = `${t},${cy - wMid / 2} ${2 * t},${cy - wB / 2} ${2 * t},${cy + wB / 2} ${t},${cy + wMid / 2}`;
-      return `<svg class="diagram-lane-taper" style="left:${left}px;top:${top}px;width:${2 * t}px;height:${maxW}px;" viewBox="0 0 ${2 * t} ${maxW}"><polygon points="${polyA}" fill="${escapeHtml(colorA)}"/><polygon points="${polyB}" fill="${escapeHtml(colorB)}"/></svg>`;
-    }
-    // 縦向きの図: 継ぎ目は横の帯（上下にt、左右にmaxW/2）。線の中心は、列の左から33px
-    const left = 33 - maxW / 2;
-    const top = boundary - t;
-    const cx = maxW / 2;
-    const polyA = `${cx - wA / 2},0 ${cx + wA / 2},0 ${cx + wMid / 2},${t} ${cx - wMid / 2},${t}`;
-    const polyB = `${cx - wMid / 2},${t} ${cx + wMid / 2},${t} ${cx + wB / 2},${2 * t} ${cx - wB / 2},${2 * t}`;
-    return `<svg class="diagram-lane-taper" style="left:${left}px;top:${top}px;width:${maxW}px;height:${2 * t}px;" viewBox="0 0 ${maxW} ${2 * t}"><polygon points="${polyA}" fill="${escapeHtml(colorA)}"/><polygon points="${polyB}" fill="${escapeHtml(colorB)}"/></svg>`;
-  }
-
   // 道路の上に重ねる、車線の区分線と、暫定の枠（地図と同じ。区分線の仕様は laneDividerSpecs() を使う）。
   // 道路（w px の太さ）の要素の中に置く。alongX=true: 道路が横向き（横向きの図の線、縦向きの図の分岐の線）
   function diagramLaneDecorHtml(lanes, provisional, w, alongX) {
@@ -2833,7 +2780,9 @@
     const minGapPx = H ? 150 : 53; // ノード同士の最低間隔
     const PITCH = 470; // （縦）分岐する路線の列の間隔（px。本線の文字と、分岐する路線の番号の丸が近づきすぎないように）
     const BRANCH_ROOM = H ? 110 : 46; // 分岐する路線があるJCTの次のノードとの間に、分岐の線を通すために空ける余白（px）
-    const CONNECT_Y = H ? 90 : 76; // JCTのノードの位置から、分岐の線を出す位置まで（px）
+    // JCTのノードの位置から、分岐の線を出す位置まで（px）。v1.55.0-betaで、JCTの記号のすぐそばから
+    // 分岐するように縮めた（ユーザー指定。以前は90/76pxと、記号からかなり離れた位置から出ていた）
+    const CONNECT_Y = H ? 30 : 26;
     const BRANCH_HEAD = H ? 60 : 34; // 分岐する路線の列（行）の端から、最初のノードまで（px。縦は、路線名の見出しの高さ）
     // 分岐の線の、角の丸みの半径（px）。細い道路は小さく（最小14px）、太い道路・暫定の枠は、内側の線が潰れないよう、半幅＋4pxにする
     const CORNER_MIN = 14;
@@ -2858,18 +2807,79 @@
       return !!trunk && trunk.points.length >= 2 && !!icById(trunk, bf.icId);
     };
 
+    // 「順接」（route.branchFrom.mode === "straight"）でつながった路線を、1本の路線であるかのように、
+    // 同じ列（トラック）の続きとして描く（v1.55.0-beta。ユーザー指定）。
+    // route の pointIndex 番目の施設から、順接している路線（1つだけ。setBranch() で1施設1本に制限している）
+    const straightChildAt = (route, pointIndex) => {
+      const ic = route.ics.find((x) => x.pointIndex === pointIndex);
+      if (!ic || !ic.id) return null;
+      return drawable.find((r) => r.branchFrom && r.branchFrom.mode === "straight" && r.branchFrom.routeId === route.id && r.branchFrom.icId === ic.id) || null;
+    };
+    // entryRoute を基準に、順接でつながる路線の並びを作る。要素は { route, dir }
+    // （dir: true は始点→終点のまま、false は終点→始点の逆向きで読む）。
+    // allowBackward のときだけ、entryRoute より前（entryRoute自身が誰かに順接している側）にも延ばす
+    // （分岐で入ってきた列は、その分岐の接続点自体が「前」にあたるため、延ばさない）
+    const buildStraightChain = (entryRoute, entryDir, allowBackward) => {
+      const chain = [{ route: entryRoute, dir: entryDir }];
+      for (;;) {
+        const last = chain[chain.length - 1];
+        const outIdx = last.dir ? last.route.points.length - 1 : 0;
+        const child = straightChildAt(last.route, outIdx);
+        if (!child || chain.some((c) => c.route === child)) break;
+        chain.push({ route: child, dir: child.branchFrom.at === "start" });
+      }
+      if (allowBackward) {
+        for (;;) {
+          const first = chain[0];
+          const bf = first.route.branchFrom;
+          if (!bf || bf.mode !== "straight") break;
+          const parent = routeById(bf.routeId);
+          const icOnParent = parent && icById(parent, bf.icId);
+          if (!parent || !icOnParent || chain.some((c) => c.route === parent)) break;
+          chain.unshift({ route: parent, dir: icOnParent.pointIndex === parent.points.length - 1 });
+        }
+      }
+      return chain;
+    };
+    // buildStraightChain() の並びから、通し距離・通し番号の施設一覧を作る（buildDiagramData() の、向き対応版）
+    const buildChainDiagramData = (chain) => {
+      let offset = 0;
+      const entries = [];
+      chain.forEach(({ route: cr, dir }) => {
+        const n = cr.points.length;
+        const cum = [0];
+        for (let i = 1; i < n; i++) cum.push(cum[i - 1] + distanceMeters(cr.points[i - 1], cr.points[i]));
+        const distAt = (pointIndex) => (dir ? cum[pointIndex] : cum[n - 1] - cum[pointIndex]);
+        cr.ics
+          .slice()
+          .sort((a, b) => distAt(a.pointIndex) - distAt(b.pointIndex))
+          .forEach((ic) => entries.push({ route: cr, ic, dist: offset + distAt(ic.pointIndex), displayNo: "" }));
+        offset += cum[n - 1];
+      });
+      let autoNo = 0;
+      entries.forEach((e) => {
+        const mode = facNumMode(e.ic);
+        if (mode === "auto") e.displayNo = String(++autoNo);
+        else if (mode === "custom") e.displayNo = (e.ic.numText || "").trim();
+      });
+      return { entries, totalDist: offset };
+    };
+
     // 1つのノード（施設）のHTML。distText は「始点から◯km」など
     const nodeHtml = (e, pos, distText, colorStyle) => {
       const ic = e.ic;
       const def = IC_TYPES[ic.type] || IC_TYPES.ic;
-      const kids = branchesOf(ic).filter((b) => b.branchFrom.routeId === e.route.id);
+      // 「分岐」（順接は除く。順接は列を作らないので、テキストの案内は不要）
+      const kids = branchesOf(ic).filter((b) => b.branchFrom.routeId === e.route.id && (b.branchFrom.mode || "branch") === "branch");
       const branchHtml = kids.length
         ? `<div class="diagram-node-branch">→ 分岐: ${kids
             .map((b) => `<button type="button" class="diagram-branch-link" data-route-id="${escapeHtml(b.id)}" title="${escapeHtml(routeLabel(b))}を選ぶ">${escapeHtml(shortRouteName(b))}</button>`)
             .join("、")}</div>`
         : "";
+      // 分岐がある施設は、施設名・番号を、分岐の線と反対側に表示する（v1.55.0-beta。ユーザー指定。重ならないように）
+      const flip = kids.length > 0;
       return `
-          <div class="diagram-node${H ? " h" : ""}" style="${H ? "left" : "top"}:${pos}px;${colorStyle || ""}">
+          <div class="diagram-node${H ? " h" : ""}${flip ? " flip" : ""}" style="${H ? "left" : "top"}:${pos}px;${colorStyle || ""}">
             ${
               e.displayNo
                 ? `<div class="diagram-node-number${e.displayNo.length >= 5 ? " len5" : e.displayNo.length >= 3 ? " len3" : ""}">${escapeHtml(e.displayNo)}</div>`
@@ -2887,11 +2897,12 @@
     // 施設どうしの間の距離（IC間距離）: 隣り合う施設の中間の、線の上に表示する。
     // 距離は実際の距離（距離の差）。表示位置は、間隔を確保した後の位置（pos）の中間。
     // 車線数が、路線の基本の車線数と違う区間（区間別の車線数）には、距離のあとに車線数を付ける
-    const gapHtml = (a, b, route, lineY) => {
+    const gapHtml = (a, b, lineY) => {
+      // 車線数の注記は、両端が同じ路線（順接でつながる路線の境をまたがない）ときだけ意味を持つ
       let lanesHtml = "";
-      if (route && a.pi != null && b.pi != null) {
-        const l = spanLanes(route, a.pi, b.pi);
-        if (l != null && l !== nearestValidLanes(route.lanes)) lanesHtml = `<span class="diagram-gap-lanes">・${l}車線</span>`;
+      if (a.route && a.route === b.route && a.pi != null && b.pi != null) {
+        const l = spanLanes(a.route, a.pi, b.pi);
+        if (l != null && l !== nearestValidLanes(a.route.lanes)) lanesHtml = `<span class="diagram-gap-lanes">・${l}車線</span>`;
       }
       const at = H ? `left:${(a.pos + b.pos) / 2}px;top:${lineY}px;` : `top:${(a.pos + b.pos) / 2 + 14.3}px;`;
       return `<div class="diagram-gap" style="${at}" title="${escapeHtml(a.name || "(無名)")} 〜 ${escapeHtml(b.name || "(無名)")}">${(Math.abs(b.d - a.d) / 1000).toFixed(1)}km${lanesHtml}</div>`;
@@ -2906,27 +2917,41 @@
       let bottom = 0;
       let colCounter = 0;
       let rootPpm = 0;
+      let rootTotal = 0; // root（順接でつながる路線があれば、その通し距離）の全長
 
       // r の列を作る。top は、図の上端からの位置。isBranch=false は root（縦の線が図の本体）
       const emit = (r, colIdx, top, ppm, isBranch, at, junction) => {
-        visited.add(r.id);
-        const bd = buildDiagramData([r]);
+        // 「順接」でつながる路線があれば、1本の路線であるかのように、同じ列にまとめて描く（v1.55.0-beta）。
+        // 分岐で入ってきた列（isBranch）は、後方（この列に入ってくる側）へは延ばさない
+        const entryDir = !(isBranch && at === "end");
+        const chain = buildStraightChain(r, entryDir, !isBranch);
+        chain.forEach((c) => visited.add(c.route.id));
+        const bd = buildChainDiagramData(chain);
         const total = bd.totalDist;
         const rppm = ppm != null ? ppm : total > 0 ? trackPx / total : 0;
-        if (!isBranch) rootPpm = rppm;
+        if (!isBranch) {
+          rootPpm = rppm;
+          rootTotal = total;
+        }
         // 主軸方向の、最初のノードまでの長さ（縦: 見出しの高さ。横: 決まった長さ）と、
         // （横）行の見出しの高さ・線の位置
         const head = isBranch ? (H ? BRANCH_HEAD : Math.max(BRANCH_HEAD, headPxMap[r.id] || 0)) : 0;
         const headH = H && isBranch ? Math.max(H_HEAD_MIN, headPxMap[r.id] || 0) : 0;
         const lineY = headH + H_LINE;
-        // 分岐点（JCT）からの距離の順に並べる（終点で分岐する路線は、終点側から）
-        const items = bd.entries.map((e) => ({ e, d: isBranch && at === "end" ? total - e.dist : e.dist })).sort((x, y) => x.d - y.d);
-        const kidsOf = (ic) =>
-          ic.id ? drawable.filter((b) => b.branchFrom && b.branchFrom.routeId === r.id && b.branchFrom.icId === ic.id && !visited.has(b.id)) : [];
+        // 通し距離の順に並べる（buildChainDiagramData() が、向き・順接の並びを踏まえた通し距離を計算済み）
+        const items = bd.entries.map((e) => ({ e, d: e.dist })).sort((x, y) => x.d - y.d);
+        // e.route（チェーンの中の、その施設がある路線）を基準に、まだ描いていない「分岐」の子を探す
+        // （「順接」は、すでにチェーンに取り込んでいるので対象外）
+        const kidsOf = (ic, icRoute) =>
+          ic.id
+            ? drawable.filter(
+                (b) => b.branchFrom && b.branchFrom.routeId === icRoute.id && b.branchFrom.icId === ic.id && (b.branchFrom.mode || "branch") === "branch" && !visited.has(b.id)
+              )
+            : [];
         let prevPos = -Infinity;
         let prevHasKids = false;
         const ns = items.map(({ e, d }) => {
-          const kids = kidsOf(e.ic);
+          const kids = kidsOf(e.ic, e.route);
           const pos = Math.max(head + d * rppm, prevPos + minGapPx + (prevHasKids ? BRANCH_ROOM : 0));
           prevPos = pos;
           prevHasKids = kids.length > 0;
@@ -2943,7 +2968,11 @@
         const gapsHtml = ns
           .slice(1)
           .map((x, i) =>
-            gapHtml({ pos: ns[i].pos, d: ns[i].d, name: ns[i].e.ic.name, pi: ns[i].e.ic.pointIndex }, { pos: x.pos, d: x.d, name: x.e.ic.name, pi: x.e.ic.pointIndex }, r, lineY)
+            gapHtml(
+              { pos: ns[i].pos, d: ns[i].d, name: ns[i].e.ic.name, pi: ns[i].e.ic.pointIndex, route: ns[i].e.route },
+              { pos: x.pos, d: x.d, name: x.e.ic.name, pi: x.e.ic.pointIndex, route: x.e.route },
+              lineY
+            )
           )
           .join("");
         let headHtml = "";
@@ -2953,12 +2982,10 @@
             `<div class="muted">${escapeHtml(junction)}から分岐（この路線の${at === "end" ? "終点" : "始点"}側）</div>` +
             `<div class="muted">${escapeHtml(diagramLaneText(r))}${routeStatuses(r).some((x) => x !== "inservice") ? "・" + escapeHtml(routeStatusText(r)) : ""}</div></div>`;
         }
-        // 路線の線: 状態・車線数・暫定が同じ区間ごとの線を並べる（太さ・線種・区分線・暫定の枠は、区間ごとに決まる）
+        // 路線の線: 状態・車線数・暫定が同じ区間ごとの線を並べる（太さ・線種・区分線・暫定の枠は、区間ごとに決まる）。
+        // 順接でつながる路線があれば、そのぶんもまとめて、1本の線の並びとして描く
         let lineHtml = "";
         {
-          const cum = [0];
-          for (let q = 1; q < r.points.length; q++) cum.push(cum[q - 1] + distanceMeters(r.points[q - 1], r.points[q]));
-          const dOf = (q) => (isBranch && at === "end" ? total - cum[q] : cum[q]); // 図の上からの距離（分岐する路線は、分岐点から）
           const anchors = ns.map((n) => ({ d: n.d, y: n.pos + (H ? 0 : 14.3) })); // 施設のマークの中心の、主軸方向の位置
           const yAt = (d) => {
             if (anchors.length === 0) return head + d * rppm;
@@ -2974,18 +3001,26 @@
             return last.y;
           };
           const pieces = [];
-          for (let q = 0; q < r.points.length - 1; q++) {
-            const da = dOf(q);
-            const db = dOf(q + 1);
-            pieces.push({
-              y1: yAt(Math.min(da, db)),
-              y2: yAt(Math.max(da, db)),
-              status: statusOfStep(r, q),
-              lanes: nearestValidLanes(laneOfStep(r, q)),
-              prov: provisionalOfStep(r, q),
-              color: colorOfStep(r, q),
-            });
-          }
+          let chainOffset = 0;
+          chain.forEach(({ route: cr, dir: crDir }) => {
+            const n = cr.points.length;
+            const cum = [0];
+            for (let i = 1; i < n; i++) cum.push(cum[i - 1] + distanceMeters(cr.points[i - 1], cr.points[i]));
+            const distAt = (q) => chainOffset + (crDir ? cum[q] : cum[n - 1] - cum[q]);
+            for (let q = 0; q < n - 1; q++) {
+              const da = distAt(q);
+              const db = distAt(q + 1);
+              pieces.push({
+                y1: yAt(Math.min(da, db)),
+                y2: yAt(Math.max(da, db)),
+                status: statusOfStep(cr, q),
+                lanes: nearestValidLanes(laneOfStep(cr, q)),
+                prov: provisionalOfStep(cr, q),
+                color: colorOfStep(cr, q),
+              });
+            }
+            chainOffset += cum[n - 1];
+          });
           pieces.sort((a, b) => a.y1 - b.y1);
           const merged = [];
           pieces.forEach((p) => {
@@ -2997,35 +3032,20 @@
             if (q === 0) m.y1 = isBranch ? cornerRadiusOf(r) : 0; // 分岐する路線の線は、角の丸み（分岐の線）のあとから始める
             if (q === merged.length - 1) m.y2 = height;
             else m.y2 = merged[q + 1].y1;
-            m.w = diagramLineWidth(m.lanes);
           });
-          // 車線数が変わる境界（太さが変わる区間の継ぎ目）は、直角の段差ではなく、斜めに切った
-          // 短い継ぎ目でつなぐ（v1.53.0-beta。ユーザー指定〔「案A'」〕）。区間の長さが短いときは、
-          // 継ぎ目がその区間からはみ出さないよう、継ぎ目の長さを短くする。
-          const taperConnectors = [];
-          for (let q = 0; q < merged.length - 1; q++) {
-            const a = merged[q];
-            const b = merged[q + 1];
-            if (a.w === b.w) continue;
-            const t = Math.min(LANE_TAPER_PX, (a.y2 - a.y1) / 2, (b.y2 - b.y1) / 2);
-            if (t < 1) continue; // 区間が短すぎるときは、継ぎ目を作らず、そのまま段差にする
-            const boundary = a.y2;
-            taperConnectors.push({ boundary, t, wA: a.w, wB: b.w, colorA: a.color, colorB: b.color });
-            a.y2 = boundary - t;
-            b.y1 = boundary + t;
-          }
           lineHtml = merged
             .map((m) => {
-              const w = m.w;
+              const w = diagramLineWidth(m.lanes);
               const len = Math.max(0, m.y2 - m.y1);
               const decor = m.status === "inservice" ? diagramLaneDecorHtml(m.lanes, m.prov, w, H) : ""; // 区分線と暫定の枠は、供用中の区間だけ（地図と同じ）
               const colorStyle = `--diagram-color:${escapeHtml(m.color)};`; // 区間別の色（v1.52.0-beta。未設定なら route.color のまま）
               if (H) return `<div class="diagram-line-seg h status-${escapeHtml(m.status)}" style="left:${m.y1}px;width:${len}px;top:${lineY - w / 2}px;height:${w}px;${colorStyle}">${decor}</div>`;
               return `<div class="diagram-line-seg status-${escapeHtml(m.status)}" style="top:${m.y1}px;height:${len}px;left:${33 - w / 2}px;width:${w}px;${colorStyle}">${decor}</div>`;
             })
-            .join("") + taperConnectors.map((c) => laneTaperSvg(c, H, lineY)).join("");
+            .join("");
         }
-        parts[colIdx] = { html: headHtml + lineHtml + nodesHtml + gapsHtml, top, height, colorStyle, color: colorOf(r), isBranch, route: r, headH, lineY };
+        const chainIds = new Set(chain.map((c) => c.route.id));
+        parts[colIdx] = { html: headHtml + lineHtml + nodesHtml + gapsHtml, top, height, colorStyle, color: colorOf(r), isBranch, route: r, chainIds, headH, lineY };
 
         // このルートから分岐している路線を、右の列に置く。下のJCTから分岐する路線ほど近くに置く
         // （上のJCTからの横線が、下の列の施設を横切らないため）
@@ -3049,7 +3069,7 @@
       const cols = parts.length;
       const rootPart = parts[0];
       const cat = CATEGORIES[root.category];
-      const meta = `${(cat && cat.label) || ""} ／ ${routeStatusText(root)} ／ ${diagramLaneText(root)} ／ 全長 約${(buildDiagramData([root]).totalDist / 1000).toFixed(1)}km${cols > 1 ? ` ／ 分岐 ${cols - 1}路線` : ""}`;
+      const meta = `${(cat && cat.label) || ""} ／ ${routeStatusText(root)} ／ ${diagramLaneText(root)} ／ 全長 約${(rootTotal / 1000).toFixed(1)}km${cols > 1 ? ` ／ 分岐 ${cols - 1}路線` : ""}`;
 
       if (H) {
         // 横向き: 行（路線ごとの横の線）を、上から順に重ね、分岐の線（縦）でつなぐ
@@ -3063,7 +3083,7 @@
         const rowsHtml = parts
           .map(
             (p) =>
-              `<div class="diagram-row${p.isBranch ? " diagram-branch-col" : ""}${p.isBranch && p.route.id === activeRouteId ? " selected-route" : ""}" data-route-id="${escapeHtml(p.route.id)}" style="left:${p.top}px;top:${p.rowTop}px;width:${p.height}px;height:${p.headH + H_LINE + H_ROW_BODY}px;${p.colorStyle}--row-head:${p.headH}px;">${p.html}</div>`
+              `<div class="diagram-row${p.isBranch ? " diagram-branch-col" : ""}${p.isBranch && p.chainIds.has(activeRouteId) ? " selected-route" : ""}" data-route-id="${escapeHtml(p.route.id)}" style="left:${p.top}px;top:${p.rowTop}px;width:${p.height}px;height:${p.headH + H_LINE + H_ROW_BODY}px;${p.colorStyle}--row-head:${p.headH}px;">${p.html}</div>`
           )
           .join("");
         const hConnectors = connectors
@@ -3076,7 +3096,7 @@
         // 選択中の路線の背景（分岐の線・路線の線より下の層に置く）
         const hHl = parts
           .map((p) =>
-            p.isBranch && p.route.id === activeRouteId
+            p.isBranch && p.chainIds.has(activeRouteId)
               ? `<div class="diagram-hl" style="left:${p.top - 66}px;top:${p.rowTop - 8}px;width:${p.height + 146}px;height:${p.headH + H_LINE + H_ROW_BODY + 16}px;"></div>`
               : ""
           )
@@ -3092,13 +3112,13 @@
         .map((p, idx) =>
           idx === 0
             ? ""
-            : `<div class="diagram-track diagram-branch-col${p.route.id === activeRouteId ? " selected-route" : ""}" data-route-id="${escapeHtml(p.route.id)}" style="left:${idx * PITCH}px;top:${p.top}px;height:${p.height}px;${p.colorStyle}">${p.html}</div>`
+            : `<div class="diagram-track diagram-branch-col${p.chainIds.has(activeRouteId) ? " selected-route" : ""}" data-route-id="${escapeHtml(p.route.id)}" style="left:${idx * PITCH}px;top:${p.top}px;height:${p.height}px;${p.colorStyle}">${p.html}</div>`
         )
         .join("");
       // 選択中の路線の背景（分岐の線・路線の線より下の層に置く）
       const hlHtml = parts
         .map((p, idx) =>
-          idx > 0 && p.route.id === activeRouteId ? `<div class="diagram-hl" style="left:${idx * PITCH - 72}px;top:${p.top - 8}px;width:464px;height:${p.height + 16}px;"></div>` : ""
+          idx > 0 && p.chainIds.has(activeRouteId) ? `<div class="diagram-hl" style="left:${idx * PITCH - 72}px;top:${p.top - 8}px;width:464px;height:${p.height + 16}px;"></div>` : ""
         )
         .join("");
       // 同じ高さから出る横線は、長いものを先に描く（短いものが上に重なり、近い列へ分かれる線が見える）
@@ -3344,7 +3364,7 @@
     out.provisionalSegments = segs(r.provisionalSegments, (s) => ({ provisional: !!s.provisional }));
     const bf = r.branchFrom;
     if (bf && typeof bf === "object" && typeof bf.routeId === "string" && typeof bf.icId === "string" && (bf.at === "start" || bf.at === "end")) {
-      out.branchFrom = { routeId: cleanString(bf.routeId, 80), icId: cleanString(bf.icId, 80), at: bf.at };
+      out.branchFrom = { routeId: cleanString(bf.routeId, 80), icId: cleanString(bf.icId, 80), at: bf.at, mode: bf.mode === "straight" ? "straight" : "branch" };
     } else {
       delete out.branchFrom;
     }
@@ -3385,17 +3405,16 @@
         if (ic.type === "half_ic") ic.type = "ic";
         delete ic.halfDirection;
       });
-      // v1.5.0〜v1.12.0 の lockEnds（始点・終点をまとめてロック）を、始点・終点それぞれのロックへ変換する
+      // v1.5.0〜v1.12.0 の lockEnds（始点・終点をまとめてロック）を、終点のロックへ変換する
       if (r.lockEnds !== undefined) {
-        r.startLocked = !!r.lockEnds;
         r.endLocked = !!r.lockEnds;
         delete r.lockEnds;
       }
-      // 始点・終点のロックが未定義の保存データは、置いてある点を「決定済み」として扱う。
+      // 終点のロックが未定義の保存データは、置いてある点を「決定済み」として扱う。
       // 終点が未決定のままだと、地図の何もない所をクリックしただけで、路線の末尾に点が追加されてしまうため。
       // 明示的に未決定（false）で保存された路線は、そのまま（描き続けられる）
-      if (r.startLocked === undefined) r.startLocked = r.points.length > 0;
       if (r.endLocked === undefined) r.endLocked = r.points.length >= 2;
+      delete r.startLocked; // v1.53.2-betaで、始点の自動ロックを廃止した（保存データに残っていても無視する）
     });
     mapNameInput.value = currentMap.name || "";
     activeRouteId = currentMap.routes.length > 0 ? currentMap.routes[0].id : null;
@@ -3502,7 +3521,7 @@
 
   // ---------------------------------------------------------------------
   // 選択中の点のツールバー（地図の上に重ねて表示。v1.51.0-beta で、右クリックメニューを廃止した代わりに追加）
-  //   ロック・解除 / 削除 / 選択の解除。施設設定は、サイドバーの「設定」タブに常設する（renderFacilitySettings）
+  //   ロック・解除 / 削除 / 選択の解除。施設設定は、サイドバーに常設する（renderFacilitySettings）
   // ---------------------------------------------------------------------
   const pointToolbarEl = document.getElementById("point-toolbar");
   const pointToolbarLabelEl = document.getElementById("point-toolbar-label");
@@ -3524,7 +3543,7 @@
     const anyPointLock = targets.some((i) => route.points[i] && route.points[i].locked);
     btnTogglePointLock.textContent = anyPointLock ? "ロック解除" : "ロック";
     btnTogglePointLock.disabled = lockedByEnds && !anyPointLock;
-    btnTogglePointLock.title = lockedByEnds && !anyPointLock ? "始点・終点のロックは、「路線」タブで解除します" : "";
+    btnTogglePointLock.title = lockedByEnds && !anyPointLock ? "終点のロックは、サイドバーで解除します" : "";
     btnDeletePoints.disabled = allLocked;
     btnDeletePoints.title = allLocked ? "ロック中の点は削除できません" : "";
   }

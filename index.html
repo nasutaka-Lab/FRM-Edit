@@ -77,18 +77,21 @@
       </button>
 
       <!-- サイドバーの切り替え（横向きの下線タブ）。一度に、選んだタブの内容だけを表示する。
-           編集モード: 路線／設定（見た目・車線・区間別の設定・施設設定をまとめたタブ）。路線図モード: 路線／施設。
-           路線を選んでいないときは「路線」だけを表示する（表示するタブは renderSidebarTabs() が切り替える） -->
+           編集モード: 「路線」1つだけ（路線一覧・名前・向き反転・削除・終点の状態・JCT分岐欄・見た目・車線・
+           区間別の設定・施設設定を、すべてまとめる。v1.53.2-betaで「路線」「設定」の2タブを統合した）。
+           路線図モード: 路線／施設。
+           タブが1つだけのとき（路線図モード以外、常にこれにあたる）は、タブの帯ごと出さない
+           （表示するタブは renderSidebarTabs() が切り替える） -->
       <div id="sidebar-head" class="sidebar-head">
         <div id="sidebar-tabs" class="sidebar-tabs" role="tablist" aria-label="サイドバーの切り替え">
           <button type="button" class="sidebar-tab" role="tab" data-tab="route">路線</button>
-          <button type="button" class="sidebar-tab" role="tab" data-tab="look">設定</button>
           <button type="button" class="sidebar-tab" role="tab" data-tab="facility">施設</button>
         </div>
         <div id="sidebar-summary" class="sidebar-summary" hidden></div>
       </div>
 
-      <!-- 路線: 路線一覧、選んだ路線の名前・向き反転・削除、始点・終点の状態 -->
+      <!-- 路線: 路線一覧、選んだ路線の名前・向き反転・削除・終点の状態・JCT分岐欄・見た目・車線・
+           区間別の設定・施設設定（路線図モードでは、路線一覧だけを表示する） -->
       <div class="tab-pane" data-pane="route">
         <section class="panel">
           <div class="panel-header">
@@ -110,12 +113,9 @@
               </div>
             </div>
 
-            <div class="endpoint-status" aria-label="始点と終点">
-              <div class="ep-row">
-                <span class="ep-label ep-start">始点</span>
-                <span class="ep-state" id="ep-start-state"></span>
-                <button id="btn-lock-start" type="button" class="switch ep-switch" role="switch" aria-checked="false" aria-label="始点のロック" title="始点は、置くと自動でロックされます。動かすときは、オフにします"><span class="switch-track" aria-hidden="true"><span class="switch-knob"></span></span><span class="switch-text">ロック</span></button>
-              </div>
+            <!-- 終点の状態（v1.53.2-betaで、始点の自動ロックのスイッチは廃止した。始点も他の点と同様、
+                 地図上の「選択中の点」ツールバーで個別にロックできる） -->
+            <div class="endpoint-status" aria-label="終点">
               <div class="ep-row">
                 <span class="ep-label ep-end">終点</span>
                 <span class="ep-state" id="ep-end-state"></span>
@@ -125,101 +125,101 @@
           </div>
         </section>
 
-        <!-- JCT・ICでの分岐（別の路線のJCTまたはICに、この路線の端をつなぐ）。中身は renderLinkPanel() が作る -->
-        <section class="panel" id="link-panel" hidden>
-          <div class="panel-header"><h2>JCT・ICでの分岐</h2></div>
+        <!-- JCT・ICでの分岐（別の路線のJCTまたはICに、この路線の端をつなぐ）。中身は renderLinkPanel() が作る。
+             多くの路線では使わないため、折りたたみ式にする（v1.53.2-beta。既定の開閉は、分岐の有無で決める。
+             ユーザーが自分で開閉すると、その路線を選んでいる間は、その状態を保つ） -->
+        <details class="panel" id="link-panel" hidden>
+          <summary id="link-summary">JCT・ICでの分岐</summary>
           <div id="link-body"></div>
-        </section>
-      </div>
+        </details>
 
-      <!-- 設定: 見た目（路線種別・状態・色・透過）・車線（基本の車線数・供用形態）・区間別の設定・施設設定を、
-           1つのタブにまとめる（v1.51.0-beta。旧「見た目」「車線」「点」タブを統合）。
-           「施設設定」（旧「IC・JCT設定」）は、点を選んでいるときだけ表示する -->
-      <div class="tab-pane" data-pane="look" hidden>
-        <section class="panel">
-          <!-- 区間モードの案内（v1.53.0-beta。ユーザー指定）。地図上でCtrl+クリックし2点以上を選んでいる間は、
-               下の状態・色・基本の車線数・供用形態が、路線全体ではなく、その区間だけの設定になる -->
-          <p class="hint-text range-mode-banner" id="range-mode-banner" hidden></p>
+        <!-- 設定: 見た目（路線種別・状態・色・透過）・車線（基本の車線数・供用形態）・区間別の設定・施設設定を、
+             1つにまとめる（v1.51.0-beta で「見た目」「車線」「点」タブを統合。v1.53.2-beta で、
+             別タブだった「設定」を「路線」に統合し、タブそのものをなくした）。
+             「施設設定」（旧「IC・JCT設定」）は、点を選んでいるときだけ表示する -->
+        <div id="route-settings" hidden>
+          <section class="panel">
+            <!-- 区間モードの案内（v1.53.0-beta。ユーザー指定）。地図上でCtrl+クリックし2点以上を選んでいる間は、
+                 下の状態・色・基本の車線数・供用形態が、路線全体ではなく、その区間だけの設定になる -->
+            <p class="hint-text range-mode-banner" id="range-mode-banner" hidden></p>
 
-          <div class="field">
-            <label>路線種別</label>
-            <div id="category-presets" class="preset-grid"></div>
-          </div>
-
-          <div class="field">
-            <label id="status-label">状態</label>
-            <div id="status-presets" class="segmented" role="group" aria-labelledby="status-label"></div>
-          </div>
-
-          <div class="field-row">
             <div class="field">
-              <label>色</label>
-              <div class="range-color-row">
+              <label>路線種別</label>
+              <div id="category-presets" class="preset-grid"></div>
+            </div>
+
+            <div class="field">
+              <label id="status-label">状態</label>
+              <div id="status-presets" class="segmented" role="group" aria-labelledby="status-label"></div>
+            </div>
+
+            <div class="field-row">
+              <div class="field">
+                <label>色</label>
                 <input type="color" id="route-color">
-                <label class="checkbox-field" id="color-range-field" hidden><input type="checkbox" id="color-range-enable">この区間だけ変える</label>
+              </div>
+              <div class="field">
+                <label>透過 <span id="route-opacity-val" class="muted"></span></label>
+                <input type="range" id="route-opacity" min="0.1" max="1" step="0.1">
               </div>
             </div>
+
             <div class="field">
-              <label>透過 <span id="route-opacity-val" class="muted"></span></label>
-              <input type="range" id="route-opacity" min="0.1" max="1" step="0.1">
+              <label id="lanes-label">基本の車線数（道路構造令：往復同数が原則）</label>
+              <div id="lanes-segmented" class="segmented" role="group" aria-labelledby="lanes-label"></div>
             </div>
-          </div>
 
-          <div class="field">
-            <label id="lanes-label">基本の車線数（道路構造令：往復同数が原則）</label>
-            <div id="lanes-segmented" class="segmented" role="group" aria-labelledby="lanes-label"></div>
-          </div>
-
-          <div class="field">
-            <label>供用形態</label>
-            <div id="provisional-segmented" class="segmented">
-              <button type="button" data-provisional="" id="provisional-none-btn" hidden>変更しない</button>
-              <button type="button" data-provisional="0" title="計画どおりの車線数で供用する（完成形）">完成形</button>
-              <button type="button" data-provisional="1" title="将来の車線数（現在＋2車線）に対し、当面は現在の車線数で供用する（暫定）">暫定形</button>
-            </div>
-            <p class="hint-text" id="provisional-summary"></p>
-          </div>
-
-          <!-- 区間ごとの設定一覧（v1.51.0-beta で、車線数・状態・色を1つの区間選択に統合。v1.52.0-betaで色を追加。
-               v1.53.0-beta で、専用の選択欄をやめ、上の状態・色・車線数・供用形態を、選択中の区間にそのまま
-               適用するように変更した。ユーザー指定。ここには、登録済みの区間の一覧と削除ボタンだけを置く） -->
-          <div class="field">
-            <label>区間ごとの設定一覧</label>
-            <div id="range-segments-list" class="list-box"></div>
-            <p class="hint-text">地図上で、<span class="kbd">Ctrl</span>+クリックして2点以上を選ぶと、上の状態・色・車線数・供用形態が、その区間だけの設定になります（選ぶと、その場ですぐに反映されます）。</p>
-          </div>
-
-          <!-- 施設設定（旧「IC・JCT設定」。v1.51.0-beta で、右クリックメニューを廃止し、ここに統合。
-               点を選んでいるときだけ表示する（地図上の点をクリックすると選択される。ロック・削除は、
-               地図に出る「選択中の点」ツールバーで操作する） -->
-          <div class="tab-section" id="facility-settings-section" hidden>
-            <h3 class="section-title">施設設定</h3>
-            <p class="hint-text" id="facility-settings-hint"></p>
             <div class="field">
-              <label>施設種別</label>
-              <select id="ic-type"></select>
+              <label>供用形態</label>
+              <div id="provisional-segmented" class="segmented">
+                <button type="button" data-provisional="" id="provisional-none-btn" hidden>変更しない</button>
+                <button type="button" data-provisional="0" title="計画どおりの車線数で供用する（完成形）">完成形</button>
+                <button type="button" data-provisional="1" title="将来の車線数（現在＋2車線）に対し、当面は現在の車線数で供用する（暫定）">暫定形</button>
+              </div>
+              <p class="hint-text" id="provisional-summary"></p>
             </div>
-            <div class="field" id="ic-shape-field" hidden>
-              <label id="ic-shape-label">図形</label>
-              <div id="ic-shape-picker" class="segmented" role="group" aria-labelledby="ic-shape-label"></div>
-            </div>
+
+            <!-- 区間ごとの設定一覧（v1.51.0-beta で、車線数・状態・色を1つの区間選択に統合。v1.52.0-betaで色を追加。
+                 v1.53.0-beta で、専用の選択欄をやめ、上の状態・色・車線数・供用形態を、選択中の区間にそのまま
+                 適用するように変更した。ユーザー指定。ここには、登録済みの区間の一覧と削除ボタンだけを置く） -->
             <div class="field">
-              <label>名称</label>
-              <input type="text" id="ic-name" placeholder="例: ○○IC">
+              <label>区間ごとの設定一覧</label>
+              <div id="range-segments-list" class="list-box"></div>
+              <p class="hint-text">地図上で、<span class="kbd">Ctrl</span>+クリックして2点以上を選ぶと、上の状態・色・車線数・供用形態が、その区間だけの設定になります（選ぶと、その場ですぐに反映されます）。</p>
             </div>
-            <div class="btn-row">
-              <button id="btn-set-ic" class="btn primary">選択点に設定</button>
-              <button id="btn-unset-ic" class="btn ghost">解除</button>
+
+            <!-- 施設設定（旧「IC・JCT設定」。v1.51.0-beta で、右クリックメニューを廃止し、ここに統合。
+                 点を選んでいるときだけ表示する（地図上の点をクリックすると選択される。ロック・削除は、
+                 地図に出る「選択中の点」ツールバーで操作する） -->
+            <div class="tab-section" id="facility-settings-section" hidden>
+              <h3 class="section-title">施設設定</h3>
+              <p class="hint-text" id="facility-settings-hint"></p>
+              <div class="field">
+                <label>施設種別</label>
+                <select id="ic-type"></select>
+              </div>
+              <div class="field" id="ic-shape-field" hidden>
+                <label id="ic-shape-label">図形</label>
+                <div id="ic-shape-picker" class="segmented" role="group" aria-labelledby="ic-shape-label"></div>
+              </div>
+              <div class="field">
+                <label>名称</label>
+                <input type="text" id="ic-name" placeholder="例: ○○IC">
+              </div>
+              <div class="btn-row">
+                <button id="btn-set-ic" class="btn primary">選択点に設定</button>
+                <button id="btn-unset-ic" class="btn ghost">解除</button>
+              </div>
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
 
       <!-- 施設（路線図モード）: 施設番号・地図上の名称ラベルなど、編集しながらでなくてもよい表示設定 -->
       <div class="tab-pane" data-pane="facility" hidden>
         <section class="panel" id="facility-panel">
           <div class="panel-header"><h2>施設の表示設定</h2></div>
-          <p class="hint-text">路線図に表示する<b>施設番号</b>と、地図上の<b>名称ラベル</b>を、施設ごとに設定します。施設は、地図の編集モードで点を選び、「設定」タブの「施設設定」で設定します。番号を付けるのはIC・JCTだけです。</p>
+          <p class="hint-text">路線図に表示する<b>施設番号</b>と、地図上の<b>名称ラベル</b>を、施設ごとに設定します。施設は、地図の編集モードで点を選ぶと開く「施設設定」で設定します。番号を付けるのはIC・JCTだけです。</p>
           <div id="facility-list" class="facility-list"></div>
         </section>
       </div>
@@ -350,7 +350,7 @@
         <div class="manual-quick">
           <div class="manual-quick-step"><b><span class="num">1</span>路線を追加</b>右側の「路線を追加」を押します</div>
           <div class="manual-quick-step"><b><span class="num">2</span>始点から順に点を打つ</b>最初に始点、順に途中の点を置き、最後に、終点の「決定」スイッチをオンにします</div>
-          <div class="manual-quick-step"><b><span class="num">3</span>点を選ぶ</b>「設定」タブで、施設（IC・JCTなど）を設定します</div>
+          <div class="manual-quick-step"><b><span class="num">3</span>点を選ぶ</b>自動で開く「施設設定」欄で、施設（IC・JCTなど）を設定します</div>
         </div>
         <h4>この説明で使う言葉</h4>
         <table class="manual-def">
@@ -383,29 +383,28 @@
         <table class="manual-def">
           <thead><tr><th>タブ</th><th>設定できること</th></tr></thead>
           <tbody>
-            <tr><th>路線</th><td>路線一覧、選んだ路線の名前・向き反転・削除、始点・終点の状態、JCT・ICでの分岐</td></tr>
-            <tr><th>設定</th><td>路線種別・状態・色・透過・基本の車線数・供用形態（暫定）。状態・色・車線数・供用形態は、2点以上を選んでいる間、区間別の設定になります。施設設定（点を選んでいるときだけ表示されます）</td></tr>
+            <tr><th>路線</th><td>路線一覧、選んだ路線の名前・向き反転・削除、終点の状態、JCT・ICでの分岐（折りたたみ）、路線種別・状態・色・透過・基本の車線数・供用形態（暫定）。状態・色・車線数・供用形態は、2点以上を選んでいる間、区間別の設定になります。施設設定（点を選んでいるときだけ表示されます）</td></tr>
             <tr><th>施設</th><td>「路線図」モードだけのタブです。施設番号と、地図上の名称ラベルの表示を設定します。</td></tr>
           </tbody>
         </table>
-        <p class="manual-note">路線を選んでいないときは、「路線」タブだけが表示されます。点を選ぶと、自動で「設定」タブに<b>施設設定</b>欄が表示されます（選ぶ前は表示されません）。地図上には、選んでいる点を操作する小さなツールバー（ロック・削除・選択の解除）が表示されます。</p>
+        <p class="manual-note">「編集」モードでは、タブは「路線」1つだけなので、タブの帯自体は表示されません（路線を選んでいないときも同じです）。点を選ぶと、自動で<b>施設設定</b>欄が表示されます（選ぶ前は表示されません）。地図上には、選んでいる点を操作する小さなツールバー（ロック・削除・選択の解除）が表示されます。</p>
         <h4>スマホで使うとき（画面の幅が760px以下）</h4>
         <ul>
           <li>サイドバーは、画面の下から出る<b>シート</b>になります。シートの上端の「設定を開く／設定を閉じる」で開閉します。閉じると、地図が画面いっぱいに広がります。</li>
-          <li>点をタップすると選ばれ、シートが自動で開いて「設定」タブの施設設定欄が表示されます。路線図に切り替えると、シートは閉じます。</li>
+          <li>点をタップすると選ばれ、シートが自動で開いて施設設定欄が表示されます。路線図に切り替えると、シートは閉じます。</li>
           <li>Ctrlキーを使う複数選択は、スマホでは使えません。</li>
         </ul>
 
         <h3 id="manual-h-route">路線を作る</h3>
         <figure class="manual-figure" data-figure="tutorial:始点から順に"><figcaption>始点から順に点を置き、最後に終点を決定します</figcaption></figure>
         <ol>
-          <li>最初は、大きな「路線を追加する」ボタンを押して、新しい路線を作ります。路線名は、「路線」タブの名前欄で変更できます。</li>
-          <li>地図をクリックして、<b>始点 → 途中の点 → 終点</b>の順に点を置いていきます。最初の点が始点（緑）で、置くと自動でロックされます。最後の点が終点（オレンジ）で、次の手順で決定するまでは「終点（仮）」と表示され、まだ動かせます。</li>
-          <li>最後の点を置いたら、「路線」タブの終点の行にある「決定」スイッチをオンにして、終点を確定（ロック）します。これで、末尾への点の追加もできなくなります。</li>
+          <li>最初は、大きな「路線を追加する」ボタンを押して、新しい路線を作ります。路線名は、サイドバーの名前欄で変更できます。</li>
+          <li>地図をクリックして、<b>始点 → 途中の点 → 終点</b>の順に点を置いていきます。最初の点が始点（緑）、最後の点が終点（オレンジ）で、次の手順で決定するまでは「終点（仮）」と表示され、まだ動かせます。</li>
+          <li>最後の点を置いたら、サイドバーの終点の行にある「決定」スイッチをオンにして、終点を確定（ロック）します。これで、末尾への点の追加もできなくなります。</li>
           <li>路線を切り替えるときは、路線一覧をクリックします（地図上の線をクリックしても選べます）。編集できる点が表示されるのは、選んでいる路線だけです。</li>
-          <li>「路線」タブの「向き反転」で、始点と終点を入れ替えられます。「削除」で、路線を削除できます。</li>
+          <li>サイドバーの「向き反転」で、始点と終点を入れ替えられます。「削除」で、路線を削除できます。</li>
         </ol>
-        <p class="manual-note">始点・終点を動かしたい、または点を追加したいときは、「路線」タブの始点・終点の行にあるスイッチをオフにして、ロックを解除します。</p>
+        <p class="manual-note">終点を動かしたい、または点を追加したいときは、サイドバーの終点の行にあるスイッチをオフにして、ロックを解除します（始点は、個別にロックしていなければ、いつでも動かせます）。</p>
 
         <h3 id="manual-h-point">点の操作</h3>
         <figure class="manual-figure" data-figure="tutorial:点を動かす"><figcaption>点をドラッグして動かします。中間点をドラッグすると、点が増えます</figcaption></figure>
@@ -417,8 +416,8 @@
             <tr><th>点を選ぶ</th><td>点をクリックします。もう一度クリックすると、選択を解除できます。</td></tr>
             <tr><th>複数の点を選ぶ</th><td><span class="kbd">Ctrl</span>（Macは<span class="kbd">Command</span>）を押しながらクリックします。選んだ点は、まとめてドラッグ移動・削除・IC・JCTの設定ができます。</td></tr>
             <tr><th>点を削除する</th><td>点を選んで、地図上に出る「選択中の点」ツールバーの「削除」を押すか、<span class="kbd">Delete</span>キーを押します。ロック中の点は削除できません。</td></tr>
-            <tr><th>点をロックする／解除する</th><td>点を選んで、地図上の「選択中の点」ツールバーの「ロック」を押します。ロック中の点は、移動・削除ができません（四角形で表示されます）。始点・終点のロックは、「路線」タブで解除します。</td></tr>
-            <tr><th>施設を設定する</th><td>点を選ぶと、サイドバーの「設定」タブに、施設設定欄が自動で開きます。</td></tr>
+            <tr><th>点をロックする／解除する</th><td>点を選んで、地図上の「選択中の点」ツールバーの「ロック」を押します。ロック中の点は、移動・削除ができません（四角形で表示されます）。終点のロックだけは、サイドバーの終点の行のスイッチで解除します。</td></tr>
+            <tr><th>施設を設定する</th><td>点を選ぶと、サイドバーに、施設設定欄が自動で開きます。</td></tr>
           </tbody>
         </table>
         <h4>選択中の点のツールバー</h4>
@@ -434,7 +433,7 @@
 
         <h3 id="manual-h-look">路線の見た目</h3>
         <figure class="manual-figure" data-figure="tutorial:路線の見た目"><figcaption>路線種別・状態・車線数などで、地図上の線の見た目が変わります</figcaption></figure>
-        <p>サイドバーの「設定」タブで設定します。地図上での見え方（線の種類・太さ・区分線・色など）は、地図左下の「凡例」ボタンで、編集しながら図で確認できます。</p>
+        <p>サイドバーで設定します。地図上での見え方（線の種類・太さ・区分線・色など）は、地図左下の「凡例」ボタンで、編集しながら図で確認できます。</p>
         <p class="manual-note">状態・色・基本の車線数・供用形態は、地図上で2点以上（<span class="kbd">Ctrl</span>+クリック）を選んでいる間は、路線全体ではなく、<b>その区間だけの設定</b>になります。詳しくは次の「区間別の設定」をご覧ください。</p>
         <table class="manual-def">
           <thead><tr><th>項目</th><th>内容</th></tr></thead>
@@ -463,9 +462,10 @@
         <p>1つの路線の中で、一部の区間だけ、状態・色・車線数・供用形態を変えられます（例：供用中の路線の一部が事業中、暫定2車線の路線の一部だけ4車線、一部だけ違う色）。専用の欄はなく、上の「路線の見た目」の状態・色・基本の車線数・供用形態を、そのまま使います。</p>
         <ol>
           <li>地図上で、<span class="kbd">Ctrl</span>（Macは<span class="kbd">Command</span>）を押しながら、区間の両端にする2点以上をクリックします（最初と最後の点が、区間の両端になります）。選ぶと、タブの上部に「点◯〜点◯の区間を編集しています」という案内が表示されます。</li>
-          <li>状態・基本の車線数・供用形態を選びます（一部だけでもかまいません。「変更しない」を選ぶと、その項目は路線全体の設定のままになります）。色を変えるときは「この区間だけ変える」にチェックしてから選びます。選ぶと、その場ですぐに反映されます（「適用」ボタンはありません）。</li>
+          <li>状態・色・基本の車線数・供用形態を選びます（一部だけでもかまいません。状態・車線数・供用形態で「変更しない」を選ぶと、その項目は路線全体の設定のままになります）。選ぶと、その場ですぐに反映されます（「適用」ボタンはありません）。</li>
         </ol>
         <ul>
+          <li>登録した区間の色を外す（路線全体の色に戻す）ときは、「区間ごとの設定一覧」から削除します。</li>
           <li>登録した区間は、「区間ごとの設定一覧」から個別に削除できます。区間を重ねた場合は、後から登録したものが優先されます。</li>
           <li>点を追加・削除したり、路線の向きを反転したりしても、登録済みの区間は自動的に追従します。</li>
           <li>状態が違う区間は、地図でも路線図でも、線の種類（実線・破線・点線）が切り替わります。路線図の見出しには、「一部事業中」などのバッジが付きます。</li>
@@ -476,7 +476,7 @@
         <h3 id="manual-h-ic">施設設定（IC・JCTなど）</h3>
         <figure class="manual-figure" data-figure="tutorial:IC・JCT"><figcaption>種別ごとに、地図上のマークが変わります</figcaption></figure>
         <ol>
-          <li>点を選びます。サイドバーの「設定」タブに、「施設設定」欄が自動で開きます。</li>
+          <li>点を選びます。サイドバーに、「施設設定」欄が自動で開きます。</li>
           <li>種別と名称を入力して、「選択点に設定」を押します。複数の点を選んでいるときは、選んでいる点すべてに設定されます。「解除」を押すと、施設の設定を外せます。</li>
         </ol>
         <table class="manual-def">
@@ -497,22 +497,33 @@
 
         <h3 id="manual-h-link">JCT・ICでの分岐</h3>
         <figure class="manual-figure" data-figure="branch"><figcaption>地図で見た分岐（緑の路線のJCTから、赤い路線が分岐しています）</figcaption></figure>
-        <p>別の路線の施設に、この路線の端をつなぎます（分岐させます）。サイドバーの「路線」タブにある「JCT・ICでの分岐」欄で設定します。</p>
+        <p>別の路線の施設に、この路線の端をつなぎます（分岐させます）。サイドバーの「JCT・ICでの分岐」欄（折りたたみ）で設定します。</p>
         <ol>
-          <li>分岐元の路線に、あらかじめ施設を設定しておきます（点を選ぶと、「設定」タブに「施設設定」欄が開きます。例：別の路線が接続する鹿児島ICや志布志IC）。どの施設種別からも分岐できます。</li>
+          <li>分岐元の路線に、あらかじめ施設を設定しておきます（点を選ぶと、サイドバーに「施設設定」欄が開きます。例：別の路線が接続する鹿児島ICや志布志IC）。どの施設種別からも分岐できます。</li>
           <li>分岐する路線（枝になる路線）を、路線一覧で選びます。枝になる路線には、点が1つ以上必要です。</li>
           <li>「JCT・ICでの分岐」欄の「分岐元の施設」で、施設を選びます。施設は路線ごとにまとまって表示され、始点からの距離も出ます。選んだ施設の場所は、地図に<b>赤い輪</b>で示されます。</li>
           <li>「この路線の分岐する端」（始点／終点）は、選んだ施設に近い端が、自動で選ばれます。違う端にするときは、押して選び直します。</li>
-          <li>「この路線をこの施設から分岐させる」を押します。</li>
+          <li>「種類」で、「分岐」か「順接」かを選びます（下記「分岐と順接」を参照）。</li>
+          <li>「この路線をこの施設から分岐させる」（順接のときは「順接させる」）を押します。</li>
         </ol>
-        <p>分岐させると、<b>この路線の端の点が、分岐元の施設の位置に移動して重なります</b>（元に戻すで戻せます）。</p>
+        <p>分岐（順接）させると、<b>この路線の端の点が、分岐元の施設の位置に移動して重なります</b>（元に戻すで戻せます）。</p>
         <ul>
           <li>「分岐を解除する」で外せます（点の位置は変わりません）。</li>
-          <li>1つの施設から、複数の路線を分岐させられます。1本の路線が分岐できる端は、始点か終点のどちらか1つです。</li>
+          <li>1つの施設から、複数の路線を分岐させられます（順接は、1つの施設につき1本まで）。1本の路線が分岐できる端は、始点か終点のどちらか1つです。</li>
           <li>つないだ点は、<b>片方を動かすと、もう片方も一緒に動きます</b>。どちらかがロック中のときは、動かせません。</li>
           <li>分岐している路線を向き反転すると、分岐している端（始点／終点）も入れ替わります。</li>
           <li>分岐元の施設をJCT・IC以外の種別にするか、その施設や路線を削除すると、分岐の設定は自動で外れます。</li>
         </ul>
+        <h4>分岐と順接</h4>
+        <p>「種類」で選びます。あとから、「JCT・ICでの分岐」欄で切り替えることもできます。</p>
+        <table class="manual-def">
+          <thead><tr><th>種類</th><th>路線図での表示</th></tr></thead>
+          <tbody>
+            <tr><th>分岐</th><td>本線の横に、別の列として並びます（JCTから枝分かれする道路）。</td></tr>
+            <tr><th>順接</th><td>分岐元の路線と、<b>同じ直線の続き</b>として表示されます（道路の名前が変わるだけで、線としてはまっすぐつながっている場合）。距離・施設番号は、分岐元の路線から通しで数えます。</td></tr>
+          </tbody>
+        </table>
+        <p class="manual-note">「順接」は、分岐元の施設が、その路線自身の<b>始点または終点そのもの</b>のときだけ選べます（途中の施設は選べません）。</p>
         <h4>分岐する路線を、新しく作る</h4>
         <p>分岐元の路線を選んで、「JCT・ICでの分岐」欄の「この路線から、新しい路線を分岐させる」を使うと、路線を作ってつなぐまでを、一度にできます。</p>
         <ol>
@@ -526,6 +537,8 @@
           <li>分岐する路線の施設は、「分岐点から◯km」で表示されます。番号・IC間距離は、分岐する路線の中で数えます。</li>
           <li>分岐が複数あれば、右に列が増えます。分岐する路線からさらに分岐する路線も、その右に並びます。</li>
           <li>分岐元の施設に「→ 分岐: ○○線」と表示されます。名前をクリックすると、その路線を選べます。分岐元の路線の分岐欄には、「この路線から分岐している路線」の一覧が表示されます。</li>
+          <li>分岐がある施設は、番号・名称が、分岐の線と反対側に表示されます（重ならないように）。</li>
+          <li>「順接」は、列を作らず、分岐元の路線と同じ直線の続きとして表示されます。「→ 分岐:」の注記や、施設番号・IC間距離の区切りも出ません（分岐元の路線から、通しで数えます）。</li>
         </ul>
 
         <h3 id="manual-h-diagram">路線図</h3>
@@ -583,9 +596,9 @@
         <table class="manual-def">
           <thead><tr><th>困っていること</th><th>確認すること</th></tr></thead>
           <tbody>
-            <tr><th>点を動かせない</th><td>その点がロック中です。点を選んで、地図上の「選択中の点」ツールバーの「ロック」を押し、解除します（始点・終点は、「路線」タブのスイッチをオフにします）。分岐でつないだ点は、どちらかがロック中だと、動かせません。</td></tr>
-            <tr><th>地図をクリックしても、点が追加されない</th><td>終点を決定済みです。「路線」タブの終点の行のスイッチをオフにして、解除します。</td></tr>
-            <tr><th>施設設定欄が出ない</th><td>点を選んでいますか？点を選ぶと、自動で「設定」タブに「施設設定」欄が開きます。</td></tr>
+            <tr><th>点を動かせない</th><td>その点がロック中です。点を選んで、地図上の「選択中の点」ツールバーの「ロック」を押し、解除します（終点は、サイドバーのスイッチをオフにします）。分岐でつないだ点は、どちらかがロック中だと、動かせません。</td></tr>
+            <tr><th>地図をクリックしても、点が追加されない</th><td>終点を決定済みです。サイドバーの終点の行のスイッチをオフにして、解除します。</td></tr>
+            <tr><th>施設設定欄が出ない</th><td>点を選んでいますか？点を選ぶと、自動でサイドバーに「施設設定」欄が開きます。</td></tr>
             <tr><th>路線が「路線図」に表示されない</th><td>点を2つ以上置くと、表示されます。</td></tr>
             <tr><th>「JCT・ICでの分岐」で、分岐元の施設が選べない</th><td>分岐元の路線に、施設を1つ以上設定してください。</td></tr>
             <tr><th>操作を間違えた</th><td><span class="kbd">Ctrl</span> + <span class="kbd">Z</span>（トップバーの「元に戻す」）で戻せます。</td></tr>

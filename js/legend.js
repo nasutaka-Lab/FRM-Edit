@@ -96,7 +96,7 @@
   }
 
   // 点のマーク1個分のSVG要素（中心 cx, cy）。チュートリアル（js/tutorial.js）でも使う。
-  // kind: start（始点。自動でロックされるため四角形）／end（終点（仮）。まだ動かせる円）／
+  // kind: start（始点。通常は円。個別にロックすると四角形になる）／end（終点（仮）。まだ動かせる円）／
   //       end-decided（終点（決定済み）。ロックされるため四角形）／vertex／mid／selected／locked
   function markerSvg(cx, cy, kind) {
     const circle = (fill) =>
@@ -105,7 +105,7 @@
     // ロック中の点は四角形（css の .vertex-marker.locked）
     const square = (fill) =>
       `<rect x="${cx - 5.75}" y="${cy - 5.75}" width="11.5" height="11.5" rx="1.5" fill="${fill}" stroke="#212121" stroke-width="2.5"/>`;
-    if (kind === "start") return square(START) + labelBox(cx, cy - 20, "始点", START, START, true, 11.6);
+    if (kind === "start") return circle(START) + labelBox(cx, cy - 20, "始点", START, START, true, 11.6);
     if (kind === "end") return circle(END) + labelBox(cx, cy - 20, "終点（仮）", END_TEXT, END, true, 11.6);
     if (kind === "end-decided") return square(END) + labelBox(cx, cy - 20, "終点", END_TEXT, END, true, 11.6);
     if (kind === "vertex") return circle(BLUE);
@@ -194,10 +194,11 @@
     out += `<circle cx="${trackX}" cy="226" r="6.6" fill="#5b6270"/>` + text(trackX + 16, 231, "終点", 13.2, "#5b6270", 700);
     shapes.forEach((type, i) => {
       const y = 62 + i * 56;
-      // 施設番号を付けるのは IC・JCT だけ（SA・PAには付けない）
-      if (type !== "sapa") out += `<circle cx="20" cy="${y}" r="13.3" fill="#fff" stroke="${color}" stroke-width="2"/>` + text(20, y + 4.2, String(i + 1), 12.1, color, 700, "middle");
+      // 施設番号を付けるのは IC・JCT だけ（SA・PAには付けない。縁はv1.55.0-betaで10%太くした）
+      if (type !== "sapa") out += `<circle cx="20" cy="${y}" r="13.3" fill="#fff" stroke="${color}" stroke-width="2.2"/>` + text(20, y + 4.2, String(i + 1), 12.1, color, 700, "middle");
+      // 施設のマーク自体は、v1.55.0-betaで20%大きくした
       if (type === "sapa") {
-        const s = 15.4;
+        const s = 18.5;
         const pts = [
           [0.5, 0],
           [1, 0.38],
@@ -209,9 +210,9 @@
           .join(" ");
         out += `<polygon points="${pts}" fill="#333"/>`;
       } else if (type === "jct") {
-        out += `<rect x="${trackX - 5.2}" y="${y - 5.2}" width="10.4" height="10.4" fill="#fff" stroke="#333" stroke-width="2.5" transform="rotate(45 ${trackX} ${y})"/>`;
+        out += `<rect x="${trackX - 6.2}" y="${y - 6.2}" width="12.4" height="12.4" fill="#fff" stroke="#333" stroke-width="2.5" transform="rotate(45 ${trackX} ${y})"/>`;
       } else {
-        out += `<circle cx="${trackX}" cy="${y}" r="6.4" fill="#fff" stroke="#333" stroke-width="2.5"/>`;
+        out += `<circle cx="${trackX}" cy="${y}" r="7.7" fill="#fff" stroke="#333" stroke-width="2.5"/>`;
       }
       out += text(trackX + 30, y - 1, names[i][0], 13.2, "#1f2328", 700) + text(trackX + 30, y + 15, names[i][1], 12.1, "#5b6270", 400);
     });
@@ -303,7 +304,7 @@
       section(
         "legend-h-status",
         "状態（線の種類）",
-        "路線の「状態」は、線の種類で見分けます。路線の一部だけ状態が違うときは、「見た目」タブの「区間別の状態」で、その区間だけ変えられます（線の種類が、区間ごとに切り替わります）。",
+        "路線の「状態」は、線の種類で見分けます。路線の一部だけ状態が違うときは、地図上で2点以上を選ぶと使える「区間別の設定」で、その区間だけ変えられます（線の種類が、区間ごとに切り替わります）。",
         [
           row(roadFig(ctx, [{ lanes: 2, len: 150 }], { color: G, status: "inservice", noDividers: true }), "供用中（実線）", "すでに開通していて、通行できる区間。"),
           row(roadFig(ctx, [{ lanes: 2, len: 150 }], { color: G, status: "construction", noDividers: true }), "事業中・建設中（破線）", "工事や事業が進んでいる区間（まだ通行できない）。"),
@@ -388,13 +389,13 @@
         "点のマーク（編集モード）",
         "路線を作る・直すときの点です。<b>選択中の路線の点だけ</b>が表示されます。",
         [
-          row(vertexMark("start"), "始点（緑・四角形）", "路線の最初の点。置くと自動でロックされる（四角形）ので、動かすには解除が必要です。"),
+          row(vertexMark("start"), "始点（緑・丸）", "路線の最初の点。ドラッグで動かせます（個別にロックすると、動かせなくなり、四角形になります）。"),
           row(vertexMark("end"), "終点（仮）（オレンジ・丸）", "描画中の、いちばん最後の点。まだ動かせます。最後に、終点の「決定」スイッチをオンにするまでは「終点（仮）」と表示されます。"),
-          row(vertexMark("end-decided"), "終点（決定済み）（オレンジ・四角形）", "終点の「決定」スイッチをオンにするとロックされ、四角形になります。動かす・点を追加するときは、「路線」タブで、スイッチをオフにします。"),
-          row(vertexMark("vertex"), "途中の点（青）", "ドラッグで移動。右クリックで設定メニュー。"),
+          row(vertexMark("end-decided"), "終点（決定済み）（オレンジ・四角形）", "終点の「決定」スイッチをオンにするとロックされ、四角形になります。動かす・点を追加するときは、サイドバーで、スイッチをオフにします。"),
+          row(vertexMark("vertex"), "途中の点（青）", "ドラッグで移動。クリックで選択すると、地図上に「選択中の点」ツールバーが表示されます。"),
           row(vertexMark("mid"), "中間点（半透明の小さな点）", "点と点の間にあり、ドラッグすると、その位置に新しい点が追加されます。"),
           row(vertexMark("selected"), "選択中の点（黄色＋赤い縁）", "普通の点（青）と同じ大きさで、黄色に塗られ、細い赤い縁が付きます（始点・終点は色そのままで、同じ縁が付く。IC・JCTなど施設のマークがある点は、マークの周りに黄色と赤の縁が付く）。クリックで選択、もう一度クリックで解除。Ctrl+クリックで複数選択。"),
-          row(vertexMark("locked"), "ロック中の点（四角形）", "移動・削除ができません。右クリックの「ロックを解除」で解除。"),
+          row(vertexMark("locked"), "ロック中の点（四角形）", "移動・削除ができません。選択して、地図上の「選択中の点」ツールバーの「ロック」で解除。"),
         ]
       )
     );

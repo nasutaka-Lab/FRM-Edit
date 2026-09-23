@@ -669,10 +669,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 /* 区間モードの案内（v1.53.0-beta）: 2点以上を選んでいる間、状態・色・車線数・供用形態が区間の設定になることを、
    目立つ色で知らせる（うっかり路線全体を変えたと思って区間だけ変わってしまう／その逆の誤操作を防ぐため） */
 .range-mode-banner { background: var(--color-primary-light); color: var(--color-primary-dark); font-weight: 700; }
-.range-color-row { display: flex; align-items: center; gap: var(--space-2); }
-.range-color-row .checkbox-field { flex: 1 1 auto; }
-.range-color-row input[type="color"] { width: 44px; height: 33px; padding: 2px; border: 1px solid var(--color-control-border); border-radius: var(--radius-sm); background: var(--color-surface); }
-.range-color-row input[type="color"]:disabled { opacity: 0.5; cursor: not-allowed; }
 .range-segment-swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 4.4px; vertical-align: -1px; border: 1px solid var(--color-border-strong); }
 
 /* ==========================================================================
@@ -715,6 +711,36 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 .accordion summary .icon-btn { text-transform: none; margin-left: -4.4px; }
 
 .accordion-body { padding-top: var(--space-3); }
+
+/* JCT・ICでの分岐欄（サイドバーの「路線」。折りたたみ式。v1.53.2-beta）。
+   .panel の見た目（カード）のまま、summary をヘッダー代わりにする */
+#link-panel > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+  list-style: none;
+  font-size: 13.8px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+#link-panel > summary::-webkit-details-marker { display: none; }
+#link-panel > summary::after {
+  content: "";
+  width: 7.7px;
+  height: 7.7px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(-45deg);
+  transition: transform var(--transition-fast);
+  margin-left: auto;
+  flex: none;
+}
+#link-panel[open] > summary { margin-bottom: var(--space-2); }
+#link-panel[open] > summary::after { transform: rotate(45deg); }
 
 /* ==========================================================================
    路線図（模式図）
@@ -773,7 +799,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 .diagram-row .diagram-branch-head { left: 32px; right: auto; width: 440px; }
 .diagram-node.h { right: auto; top: 0; width: 0; }
 .diagram-node.h .diagram-node-number { left: -14.3px; top: calc(var(--row-head, 0px) + 4px); }
-.diagram-node.h .diagram-node-marker { left: -7.7px; top: calc(var(--row-head, 0px) + 52px - 7.7px); }
+.diagram-node.h .diagram-node-marker { left: -9.24px; top: calc(var(--row-head, 0px) + 42.76px); } /* v1.55.0-betaで20%拡大した分、中心が動かないよう調整 */
 .diagram-node.h .diagram-node-info {
   position: absolute;
   left: -66px;
@@ -783,6 +809,12 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   padding: 0;
   text-align: center;
 }
+/* 分岐がある施設は、番号・名称を、線をはさんで反対側（上）に表示する（v1.55.0-beta。ユーザー指定） */
+.diagram-node.h.flip .diagram-node-number { top: calc(var(--row-head, 0px) + 71.5px); }
+.diagram-node.h.flip .diagram-node-info {
+  top: calc(var(--row-head, 0px) + 32px);
+  transform: translateY(-100%);
+}
 .diagram-line-seg.h.status-construction {
   background: repeating-linear-gradient(to right, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
 }
@@ -791,7 +823,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 .diagram-endpoint.h { position: absolute; margin: 0; padding: 0; height: 22px; white-space: nowrap; }
 .diagram-group { flex: none; padding-bottom: var(--space-3); border-radius: var(--radius-md); }
-.diagram-group { padding-left: 12px; }
+.diagram-group { padding-left: 24px; } /* v1.55.0-betaで12→24pxに（分岐がある施設の、左に反転したラベル分の余白） */
 /* 図が複数あるときだけ、選択中の路線を含む図を色づける（1つのときは全体が色づいて意味がないため） */
 #route-diagram.multi-groups .diagram-group.selected { background: var(--color-primary-light); box-shadow: 0 0 0 10px var(--color-primary-light); }
 .diagram-select { cursor: pointer; }
@@ -844,8 +876,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 /* 車線の区分線と、暫定の枠（道路の要素の中に、位置と色を style で指定して置く） */
 .diagram-lane-line { position: absolute; display: block; pointer-events: none; }
-/* 車線数が変わる境界の継ぎ目（斜めに切ってつなぐ。v1.53.0-beta）。位置・大きさは style で指定する */
-.diagram-lane-taper { position: absolute; display: block; pointer-events: none; }
 .diagram-line-seg.status-construction {
   background: repeating-linear-gradient(to bottom, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
 }
@@ -930,7 +960,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   height: 28.6px;
   border-radius: 50%;
   background: var(--color-surface);
-  border: 2px solid var(--diagram-color, var(--color-primary));
+  border: 2.2px solid var(--diagram-color, var(--color-primary)); /* v1.55.0-betaで、10%太くした（ユーザー指定） */
   color: var(--color-text); /* 文字は濃い色（路線の色が淡いと、読めないため）。縁だけ路線の色 */
   display: flex;
   align-items: center;
@@ -941,12 +971,13 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 .diagram-node-number.len3 { font-size: 10.5px; letter-spacing: -0.03em; }
 .diagram-node-number.len5 { font-size: 8.8px; letter-spacing: -0.05em; }
+/* v1.55.0-betaで、20%大きくした（ユーザー指定。left/topは、中心の位置が変わらないよう合わせて調整） */
 .diagram-node-marker {
   position: absolute;
-  left: 24.2px;
-  top: 6.6px;
-  width: 15.4px;
-  height: 15.4px;
+  left: 22.66px;
+  top: 5.06px;
+  width: 18.48px;
+  height: 18.48px;
   background: #fff;
   border: 2.5px solid #333; /* 施設のマークの色は、地図の施設点（.ic-shape）と同じ（路線の色にしない） */
   z-index: 1;
@@ -969,6 +1000,18 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   padding-left: 24.2px;
   font-size: 13.2px;
   line-height: 1.4;
+}
+/* 分岐がある施設は、番号・名称を、マークをはさんで反対側（左）に表示する（v1.55.0-beta。ユーザー指定。
+   分岐の線と重ならないように。マークの位置〔＝路線の線の位置〕自体は動かさない） */
+.diagram-node.flip .diagram-node-number { left: 63px; }
+.diagram-node.flip .diagram-node-info {
+  position: absolute;
+  top: 0;
+  margin: 0;
+  padding: 0 4px 0 0;
+  left: -72px;
+  width: 92px;
+  text-align: right;
 }
 /* 施設どうしの間の距離（IC間距離）。線の上に、白地の小さなラベルで重ねる */
 .diagram-gap {
@@ -1375,7 +1418,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
    ========================================================================== */
 /* （旧・点の右クリックメニューの .context-menu-* は、v1.51.0-beta で廃止した） */
 
-/* 始点・終点の状態と操作（2行） */
+/* 終点の状態と操作（v1.53.2-betaで、始点の行は廃止した。始点は他の点と同様、個別ロックだけで扱う） */
 .endpoint-status {
   display: flex;
   flex-direction: column;
@@ -1397,7 +1440,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   font-weight: 700;
   text-align: center;
 }
-.ep-label.ep-start { background: var(--color-primary); }
 .ep-label.ep-end { background: #c53f00; } /* 白い文字が 4.5:1 以上 */
 .ep-state { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--color-text-muted); }
 .ep-state.locked { color: var(--color-text); font-weight: 600; }
@@ -1888,7 +1930,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 .facility-controls .checkbox-field { flex: 1 1 auto; }
 .facility-controls .fac-goto { flex: none; }
 
-/* 「路線」タブの「JCTでの分岐」欄 */
+/* サイドバーの「JCT・ICでの分岐」欄（折りたたみ） */
 .link-branch-now { margin: 0 0 var(--space-2); font-size: 13px; line-height: 1.6; }
 .link-at-note { margin: 4px 0 0; }
 .link-sub { margin-top: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--color-border); }
