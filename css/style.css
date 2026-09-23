@@ -870,8 +870,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 /* 車線の区分線と、暫定の枠（道路の要素の中に、位置と色を style で指定して置く） */
 .diagram-lane-line { position: absolute; display: block; pointer-events: none; }
-/* 車線数が変わる境界の継ぎ目（斜めに切ってつなぐ。v1.53.0-beta）。位置・大きさは style で指定する */
-.diagram-lane-taper { position: absolute; display: block; pointer-events: none; }
 .diagram-line-seg.status-construction {
   background: repeating-linear-gradient(to bottom, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
 }

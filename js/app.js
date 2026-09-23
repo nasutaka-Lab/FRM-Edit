@@ -32,11 +32,6 @@
     return nearestValidLanes(lanes) * LANE_WIDTH_PX;
   }
 
-  // 地図で、車線数（太さ）が変わる境界につくる「すぼまり区間」の継ぎ目（v1.53.0-beta。ユーザー指定）。
-  // 長さの目安（m。区間が短いときは、区間の4割までに抑える）と、階段状に近似する分割数。
-  const LANE_TAPER_METERS = 30;
-  const LANE_TAPER_STEPS = 8;
-
   // 区間別車線数: route.laneSegments = [{ id, fromIdx, toIdx, lanes }, ...]
   // 区間別の状態:  route.statusSegments = [{ id, fromIdx, toIdx, status }, ...]（v1.40.0）
   // 区間別の色:    route.colorSegments = [{ id, fromIdx, toIdx, color }, ...]（v1.52.0-beta。ユーザー指定）
@@ -822,14 +817,7 @@
     const segments = routeLineRefs.get(route.id);
     if (!segments) return;
     segments.forEach((seg) => {
-      if (seg.taperK != null) {
-        // 車線数が変わる境界の継ぎ目（すぼまり区間）。ドラッグ中も、隣り合う2点から作り直す
-        updateLaneTaper(route, seg);
-        return;
-      }
       const latlngs = buildRenderedLatLngsRange(route, seg.startIdx, seg.endIdx);
-      if (seg.taperEndIdx != null) latlngs[latlngs.length - 1] = laneTaperLatLng(route, seg.taperEndIdx, -1);
-      if (seg.taperStartIdx != null) latlngs[0] = laneTaperLatLng(route, seg.taperStartIdx, 1);
       seg.line.setLatLngs(latlngs);
       seg.dividers.forEach((d) => d.setLatLngs(latlngs));
     });
@@ -838,69 +826,6 @@
   // route.points の [startIdx, endIdx] 区間の、描画用の緯度経度列（点を、直線で結ぶ）
   function buildRenderedLatLngsRange(route, startIdx, endIdx) {
     return route.points.slice(startIdx, endIdx + 1).map((p) => [p.lat, p.lng]);
-  }
-
-  // 車線数が変わる境界（点 k）の、継ぎ目（すぼまり区間）の端になる地点。
-  // dir=-1: k の手前（k-1〜k の間）／dir=+1: k の先（k〜k+1 の間）。隣り合う2点だけで求めるので、
-  // ドラッグ中の再計算も軽い（v1.53.0-beta。ユーザー指定〔地図の「案B」〕）。
-  function laneTaperLatLng(route, k, dir) {
-    const b = route.points[k];
-    const other = route.points[k + dir];
-    const segLen = distanceMeters(b, other);
-    if (!(segLen > 0)) return [b.lat, b.lng];
-    const cut = Math.min(LANE_TAPER_METERS, segLen * 0.4); // 区間が短いときは、区間の4割までに抑える
-    const frac = cut / segLen;
-    return [b.lat + (other.lat - b.lat) * frac, b.lng + (other.lng - b.lng) * frac];
-  }
-
-  // route の区間（buildLaneRanges() の戻り値）のうち、車線数（太さ）が変わる境界の一覧。
-  // 継ぎ目（すぼまり区間）を作る場所（{ k: 境界の点index, wA, wB: 前後の太さ, colorA, colorB: 前後の色 }）。
-  function laneTaperBoundaries(ranges) {
-    const list = [];
-    for (let i = 0; i < ranges.length - 1; i++) {
-      const wA = laneWeight(ranges[i].lanes);
-      const wB = laneWeight(ranges[i + 1].lanes);
-      if (wA !== wB) list.push({ k: ranges[i].endIdx, wA, wB, colorA: ranges[i].color, colorB: ranges[i + 1].color });
-    }
-    return list;
-  }
-
-  // 継ぎ目（すぼまり区間）を、太さが段階的に変わる短いポリラインを並べて描く（L.polyline の weight は
-  // 1本につき一定のため、細かく分けて「階段状」に近似する。LANE_TAPER_STEPS を増やすほどなめらかになる）。
-  function drawLaneTaper(route, k) {
-    const before = laneTaperLatLng(route, k, -1);
-    const after = laneTaperLatLng(route, k, 1);
-    const lines = [];
-    for (let i = 0; i < LANE_TAPER_STEPS; i++) {
-      const line = L.polyline([before, after], { interactive: false, lineCap: "butt" });
-      line.addTo(routesLayer);
-      lines.push(line);
-    }
-    const seg = { taperK: k, lines };
-    updateLaneTaper(route, seg);
-    return seg;
-  }
-
-  // 継ぎ目（すぼまり区間）の位置・太さ・色を、いまの route.points（ドラッグ中も）に合わせて更新する
-  function updateLaneTaper(route, seg) {
-    const tb = laneTaperBoundaries(buildLaneRanges(route)).find((t) => t.k === seg.taperK);
-    if (!tb) return; // 区間別の設定が変わり、この境界がもう無くなっていたら、何もしない（次の再描画で消える）
-    const before = laneTaperLatLng(route, tb.k, -1);
-    const after = laneTaperLatLng(route, tb.k, 1);
-    const opacity = route.opacity;
-    const steps = seg.lines.length;
-    seg.lines.forEach((line, i) => {
-      const f0 = i / steps;
-      const f1 = (i + 1) / steps;
-      const p0 = [before[0] + (after[0] - before[0]) * f0, before[1] + (after[1] - before[1]) * f0];
-      const p1 = [before[0] + (after[0] - before[0]) * f1, before[1] + (after[1] - before[1]) * f1];
-      line.setLatLngs([p0, p1]);
-      line.setStyle({
-        weight: tb.wA + (tb.wB - tb.wA) * ((f0 + f1) / 2),
-        color: (f0 + f1) / 2 < 0.5 ? tb.colorA : tb.colorB,
-        opacity,
-      });
-    });
   }
 
   // 頂点・中間点マーカー専用ペイン。IC/JCTマーカー（デフォルトのmarkerPane）より
@@ -957,20 +882,11 @@
         // 区間別の車線数・状態・色により、1つの路線を、車線数も状態も色も一定の区間
         // （レンジ）に分割し、区間ごとに太さ・線種・色の異なるポリラインとして描画する。
         const ranges = buildLaneRanges(route);
-        // 車線数（太さ）が変わる境界には、直角の段差ではなく、短い「すぼまり区間」の継ぎ目を作る
-        // （v1.53.0-beta。ユーザー指定〔地図の「案B」〕）。区間の線は、境界の少し手前・先で止める。
-        const taperBoundaries = laneTaperBoundaries(ranges);
-        const taperByEndIdx = new Map(taperBoundaries.map((t) => [t.k, t]));
-        const taperByStartIdx = new Map(taperBoundaries.map((t) => [t.k, t]));
         const segments = [];
 
         ranges.forEach((range) => {
           const status = STATUSES[range.status] || STATUSES.inservice;
           const latlngs = buildRenderedLatLngsRange(route, range.startIdx, range.endIdx);
-          const hasEndTaper = taperByEndIdx.has(range.endIdx);
-          const hasStartTaper = taperByStartIdx.has(range.startIdx);
-          if (hasEndTaper) latlngs[latlngs.length - 1] = laneTaperLatLng(route, range.endIdx, -1);
-          if (hasStartTaper) latlngs[0] = laneTaperLatLng(route, range.startIdx, 1);
           const weight = laneWeight(range.lanes);
           const dashArray = status.dashArray(weight);
           const line = L.polyline(latlngs, {
@@ -979,8 +895,7 @@
             opacity: route.opacity,
             dashArray: dashArray,
             // 丸い線端だと太い線でダッシュ同士が重なって潰れて見えるため、破線・点線のときは端を角形にする。
-            // 継ぎ目（すぼまり区間）に接する端も、丸い縁が継ぎ目にはみ出さないよう角形にする。
-            lineCap: dashArray || hasEndTaper || hasStartTaper ? "butt" : "round",
+            lineCap: dashArray ? "butt" : "round",
           });
           line.on("click", (e) => {
             L.DomEvent.stop(e);
@@ -994,17 +909,8 @@
           // 区分線を重ねて車線数そのものを視覚化する（供用中の道路のみ）。暫定の枠の色は、この区間の色。
           const dividers = range.status === "inservice" ? drawLaneDividers(latlngs, route, range.lanes, weight, range.color, range.provisional) : [];
 
-          segments.push({
-            startIdx: range.startIdx,
-            endIdx: range.endIdx,
-            line,
-            dividers,
-            taperEndIdx: hasEndTaper ? range.endIdx : null,
-            taperStartIdx: hasStartTaper ? range.startIdx : null,
-          });
+          segments.push({ startIdx: range.startIdx, endIdx: range.endIdx, line, dividers });
         });
-
-        taperBoundaries.forEach((tb) => segments.push(drawLaneTaper(route, tb.k)));
 
         routeLineRefs.set(route.id, segments);
       }
@@ -2670,34 +2576,6 @@
   const DIAGRAM_LANE_PX = 5;
   const diagramLineWidth = (lanes) => nearestValidLanes(lanes) * DIAGRAM_LANE_PX;
 
-  // 車線数が変わる境界の継ぎ目（斜めに切ってつなぐ）の、片側の長さ（px。v1.53.0-beta。ユーザー指定）
-  const LANE_TAPER_PX = 8;
-
-  // 太さが変わる境界を、直角の段差ではなく、斜めのSVGの四角形2枚（それぞれの区間の色）でつなぐ。
-  // c = { boundary, t, wA, wB, colorA, colorB }（boundary: 境界の位置、t: 継ぎ目の片側の長さ、
-  // wA/wB: 境界の前後の太さ、colorA/colorB: 境界の前後の色）。H: 横向きの図か。lineY: 横向きのときの、線の中心の位置。
-  function laneTaperSvg(c, H, lineY) {
-    const { boundary, t, wA, wB, colorA, colorB } = c;
-    const wMid = (wA + wB) / 2;
-    const maxW = Math.max(wA, wB);
-    if (H) {
-      // 横向きの図: 継ぎ目は縦の帯（左右にt、上下にmaxW/2）
-      const left = boundary - t;
-      const top = lineY - maxW / 2;
-      const cy = maxW / 2;
-      const polyA = `${0},${cy - wA / 2} ${t},${cy - wMid / 2} ${t},${cy + wMid / 2} ${0},${cy + wA / 2}`;
-      const polyB = `${t},${cy - wMid / 2} ${2 * t},${cy - wB / 2} ${2 * t},${cy + wB / 2} ${t},${cy + wMid / 2}`;
-      return `<svg class="diagram-lane-taper" style="left:${left}px;top:${top}px;width:${2 * t}px;height:${maxW}px;" viewBox="0 0 ${2 * t} ${maxW}"><polygon points="${polyA}" fill="${escapeHtml(colorA)}"/><polygon points="${polyB}" fill="${escapeHtml(colorB)}"/></svg>`;
-    }
-    // 縦向きの図: 継ぎ目は横の帯（上下にt、左右にmaxW/2）。線の中心は、列の左から33px
-    const left = 33 - maxW / 2;
-    const top = boundary - t;
-    const cx = maxW / 2;
-    const polyA = `${cx - wA / 2},0 ${cx + wA / 2},0 ${cx + wMid / 2},${t} ${cx - wMid / 2},${t}`;
-    const polyB = `${cx - wMid / 2},${t} ${cx + wMid / 2},${t} ${cx + wB / 2},${2 * t} ${cx - wB / 2},${2 * t}`;
-    return `<svg class="diagram-lane-taper" style="left:${left}px;top:${top}px;width:${maxW}px;height:${2 * t}px;" viewBox="0 0 ${maxW} ${2 * t}"><polygon points="${polyA}" fill="${escapeHtml(colorA)}"/><polygon points="${polyB}" fill="${escapeHtml(colorB)}"/></svg>`;
-  }
-
   // 道路の上に重ねる、車線の区分線と、暫定の枠（地図と同じ。区分線の仕様は laneDividerSpecs() を使う）。
   // 道路（w px の太さ）の要素の中に置く。alongX=true: 道路が横向き（横向きの図の線、縦向きの図の分岐の線）
   function diagramLaneDecorHtml(lanes, provisional, w, alongX) {
@@ -2975,33 +2853,17 @@
             if (q === 0) m.y1 = isBranch ? cornerRadiusOf(r) : 0; // 分岐する路線の線は、角の丸み（分岐の線）のあとから始める
             if (q === merged.length - 1) m.y2 = height;
             else m.y2 = merged[q + 1].y1;
-            m.w = diagramLineWidth(m.lanes);
           });
-          // 車線数が変わる境界（太さが変わる区間の継ぎ目）は、直角の段差ではなく、斜めに切った
-          // 短い継ぎ目でつなぐ（v1.53.0-beta。ユーザー指定〔「案A'」〕）。区間の長さが短いときは、
-          // 継ぎ目がその区間からはみ出さないよう、継ぎ目の長さを短くする。
-          const taperConnectors = [];
-          for (let q = 0; q < merged.length - 1; q++) {
-            const a = merged[q];
-            const b = merged[q + 1];
-            if (a.w === b.w) continue;
-            const t = Math.min(LANE_TAPER_PX, (a.y2 - a.y1) / 2, (b.y2 - b.y1) / 2);
-            if (t < 1) continue; // 区間が短すぎるときは、継ぎ目を作らず、そのまま段差にする
-            const boundary = a.y2;
-            taperConnectors.push({ boundary, t, wA: a.w, wB: b.w, colorA: a.color, colorB: b.color });
-            a.y2 = boundary - t;
-            b.y1 = boundary + t;
-          }
           lineHtml = merged
             .map((m) => {
-              const w = m.w;
+              const w = diagramLineWidth(m.lanes);
               const len = Math.max(0, m.y2 - m.y1);
               const decor = m.status === "inservice" ? diagramLaneDecorHtml(m.lanes, m.prov, w, H) : ""; // 区分線と暫定の枠は、供用中の区間だけ（地図と同じ）
               const colorStyle = `--diagram-color:${escapeHtml(m.color)};`; // 区間別の色（v1.52.0-beta。未設定なら route.color のまま）
               if (H) return `<div class="diagram-line-seg h status-${escapeHtml(m.status)}" style="left:${m.y1}px;width:${len}px;top:${lineY - w / 2}px;height:${w}px;${colorStyle}">${decor}</div>`;
               return `<div class="diagram-line-seg status-${escapeHtml(m.status)}" style="top:${m.y1}px;height:${len}px;left:${33 - w / 2}px;width:${w}px;${colorStyle}">${decor}</div>`;
             })
-            .join("") + taperConnectors.map((c) => laneTaperSvg(c, H, lineY)).join("");
+            .join("");
         }
         parts[colIdx] = { html: headHtml + lineHtml + nodesHtml + gapsHtml, top, height, colorStyle, color: colorOf(r), isBranch, route: r, headH, lineY };
 

@@ -1,8 +1,18 @@
 // リリースノート（画面の「リリースノート」に表示される、利用者向けの更新内容）。
 // 新しい版は配列の先頭に追加すること。CHANGELOG.md（開発者向け）と内容を揃える。
-window.APP_VERSION = "1.54.1-beta";
+window.APP_VERSION = "1.54.2-beta";
 
 window.RELEASE_NOTES = [
+  {
+    version: "1.54.2-beta",
+    date: "2026-09-23",
+    sections: [
+      {
+        title: "変更",
+        items: ["車線数が変わる境界を、なめらかにつなぐ継ぎ目を廃止しました。地図・路線図とも、直角の段差に戻しています"],
+      },
+    ],
+  },
   {
     version: "1.54.1-beta",
     date: "2026-09-23",
