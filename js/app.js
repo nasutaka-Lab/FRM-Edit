@@ -2,142 +2,30 @@
   "use strict";
 
   // ---------------------------------------------------------------------
-  // 定数定義: 道路法・道路構造令の区分に基づく種別/状態/IC種別プリセット
+  // 定数・計算: js/road-model.js（window.RoadModel）
   // ---------------------------------------------------------------------
-  const CATEGORIES = {
-    expressway: { label: "高速自動車国道", color: "#2e7d32", lanes: 4 },
-    urban_expressway: { label: "都市高速道路", color: "#1565c0", lanes: 4 },
-    regional_highstandard: { label: "地域高規格道路", color: "#8bc34a", lanes: 2 },
-    national: { label: "一般国道", color: "#e53935", lanes: 2 },
-    prefectural: { label: "都道府県道", color: "#fb8c00", lanes: 2 },
-    municipal: { label: "市町村道", color: "#9e9e9e", lanes: 1 },
-  };
+  const {
+    escapeHtml,
+    CATEGORIES,
+    LANE_WIDTH_PX,
+    LANE_OPTIONS,
+    nearestValidLanes,
+    laneWeight,
+    laneOfStep,
+    statusOfStep,
+    colorOfStep,
+    provisionalOfStep,
+    segmentLists,
+    buildLaneRanges,
+    STATUSES,
+    IC_TYPES,
+    OTHER_SHAPES,
+    otherShapeOf,
+    icShapeOf,
+    STORAGE_KEY,
+    distanceMeters,
+  } = window.RoadModel;
 
-  // 車線数に応じた線の太さ（1車線あたりのpx幅）
-  //
-  // 道路構造令 第5条は「車線数は、往復の方向別に、それぞれ同数とする」を原則とし
-  // （地形等やむを得ない場合を除く）、車線数は基本的に偶数となる。
-  // 例外として、小規模な道路（第4種第5級 等）では対面通行の1車線も認められる。
-  // そのため選択肢は、原則の偶数（2/4/6/8）＋例外の1車線に限定する。
-  const LANE_WIDTH_PX = 4;
-  const LANE_OPTIONS = [1, 2, 4, 6, 8];
-
-  function nearestValidLanes(n) {
-    n = Number(n);
-    if (!Number.isFinite(n)) return LANE_OPTIONS[0];
-    return LANE_OPTIONS.reduce((best, cur) => (Math.abs(cur - n) < Math.abs(best - n) ? cur : best));
-  }
-
-  function laneWeight(lanes) {
-    return nearestValidLanes(lanes) * LANE_WIDTH_PX;
-  }
-
-  // 区間別車線数: route.laneSegments = [{ id, fromIdx, toIdx, lanes }, ...]
-  // 区間別の状態:  route.statusSegments = [{ id, fromIdx, toIdx, status }, ...]（v1.40.0）
-  // 区間別の色:    route.colorSegments = [{ id, fromIdx, toIdx, color }, ...]（v1.52.0-beta。ユーザー指定）
-  // 区間別の供用形態: route.provisionalSegments = [{ id, fromIdx, toIdx, provisional }, ...]（v1.53.0-beta。ユーザー指定）
-  // 「始点」「終点」の2点を選んで指定した区間（点 fromIdx から点 toIdx までの間）だけ、基本の値
-  // （route.lanes / route.status / route.color / route.provisional）を上書きする。複数区間が重なる場合は、
-  // 後から追加したものを優先する（配列の後ろほど優先）。値は、点 k から点 k+1 までの区間（ステップ）ごとに決める。
-  function segmentValueOfStep(segments, k, key, fallback) {
-    const list = segments || [];
-    for (let i = list.length - 1; i >= 0; i--) {
-      if (k >= list[i].fromIdx && k + 1 <= list[i].toIdx) return list[i][key];
-    }
-    return fallback;
-  }
-  const laneOfStep = (route, k) => segmentValueOfStep(route.laneSegments, k, "lanes", route.lanes);
-  const statusOfStep = (route, k) => segmentValueOfStep(route.statusSegments, k, "status", route.status || "inservice");
-  const colorOfStep = (route, k) => segmentValueOfStep(route.colorSegments, k, "color", route.color);
-  // 区間別の供用形態は、明示的に設定されていれば、それを使う。設定されていなければ、これまでどおり
-  // 「路線全体が暫定で、かつ、この区間の車線数が基本の車線数と同じ」ときだけ暫定として扱う（v1.45.0からの規則を維持）。
-  function provisionalOfStep(route, k) {
-    const explicit = segmentValueOfStep(route.provisionalSegments, k, "provisional", undefined);
-    if (explicit !== undefined) return explicit;
-    return !!route.provisional && nearestValidLanes(laneOfStep(route, k)) === nearestValidLanes(route.lanes);
-  }
-  // 区間別の設定のリスト（点の追加・削除・向き反転で、インデックスをそろえて直すときに使う）
-  const segmentLists = (route) => [route.laneSegments, route.statusSegments, route.colorSegments, route.provisionalSegments].filter(Array.isArray);
-
-  // route.points（PI）を「車線数・状態・色・供用形態がすべて同じ区間が続く区間」に分割する。
-  // 戻り値: [{ startIdx, endIdx, lanes, status, color, provisional }, ...]（endIdxは次区間のstartIdxと共有）
-  function buildLaneRanges(route) {
-    const pts = route.points;
-    if (pts.length < 2) return [];
-    const ranges = [];
-    let rangeStart = 0;
-    let rangeLanes = laneOfStep(route, 0);
-    let rangeStatus = statusOfStep(route, 0);
-    let rangeColor = colorOfStep(route, 0);
-    let rangeProv = provisionalOfStep(route, 0);
-    for (let k = 1; k < pts.length - 1; k++) {
-      const lanesHere = laneOfStep(route, k);
-      const statusHere = statusOfStep(route, k);
-      const colorHere = colorOfStep(route, k);
-      const provHere = provisionalOfStep(route, k);
-      if (lanesHere !== rangeLanes || statusHere !== rangeStatus || colorHere !== rangeColor || provHere !== rangeProv) {
-        ranges.push({ startIdx: rangeStart, endIdx: k, lanes: rangeLanes, status: rangeStatus, color: rangeColor, provisional: rangeProv });
-        rangeStart = k;
-        rangeLanes = lanesHere;
-        rangeStatus = statusHere;
-        rangeColor = colorHere;
-        rangeProv = provHere;
-      }
-    }
-    ranges.push({ startIdx: rangeStart, endIdx: pts.length - 1, lanes: rangeLanes, status: rangeStatus, color: rangeColor, provisional: rangeProv });
-    return ranges;
-  }
-
-  // dashArrayは太さ（車線数）に応じて可変にする。固定のダッシュ長のままだと、
-  // 車線数が多く太い道路では丸い線端（lineCap）が隣のダッシュと重なり、
-  // 点線・破線が潰れて実線のように見えてしまう不具合があったため。
-  const STATUSES = {
-    inservice: { label: "供用中", dashArray: () => null },
-    construction: { label: "事業中・建設中", dashArray: (w) => `${Math.round(w * 1.4)},${Math.round(w * 0.9)}` },
-    planned: { label: "計画・構想中", dashArray: (w) => `${Math.max(2, Math.round(w * 0.35))},${Math.round(w * 1.3)}` },
-  };
-
-  // short: 分岐の選択肢（facLabel()）など、狭い場所で使う短い種別名
-  const IC_TYPES = {
-    ic: { label: "IC（インターチェンジ）", short: "IC", shape: "circle", size: 16 },
-    jct: { label: "JCT（ジャンクション）", short: "JCT", shape: "diamond", size: 16 },
-    sapa: { label: "SA・PA", short: "SA・PA", shape: "pentagon", size: 16 },
-    toll: { label: "本線料金所", short: "料金所", shape: "square", size: 14 },
-    entrance: { label: "一般道 出入口・交差点", short: "出入口", shape: "circle", size: 10 },
-    // その他: 既存の種別に当てはまらない、自由な施設（v1.51.0-beta）。地図上の図形は、OTHER_SHAPES から
-    // 選べる（ic.shape に保存。未設定・不明な値は既定の "triangle" を使う）。名称は、ほかの種別と同じ自由記述。
-    other: { label: "その他", short: "その他", shape: "triangle", size: 16 },
-  };
-
-  // 「その他」施設で選べる図形（5種類。既存のIC/JCT/SA・PA/本線料金所の丸・ひし形・五角形・四角形と被らない形にする）
-  const OTHER_SHAPES = [
-    { key: "triangle", label: "三角" },
-    { key: "hexagon", label: "六角形" },
-    { key: "star", label: "星" },
-    { key: "cross", label: "十字" },
-    { key: "octagon", label: "八角形" },
-  ];
-  function otherShapeOf(ic) {
-    return OTHER_SHAPES.some((s) => s.key === ic.shape) ? ic.shape : OTHER_SHAPES[0].key;
-  }
-  // 施設のマークの図形（IC_TYPESの既定に加え、「その他」は ic.shape で個別に選ぶ）
-  function icShapeOf(ic) {
-    return ic.type === "other" ? otherShapeOf(ic) : (IC_TYPES[ic.type] || IC_TYPES.ic).shape;
-  }
-
-  const STORAGE_KEY = "koukikaku_road_tool_maps";
-
-  // 2点間の直線距離（メートル、Haversine）
-  function distanceMeters(a, b) {
-    const R = 6371000;
-    const toRad = (d) => (d * Math.PI) / 180;
-    const dLat = toRad(b.lat - a.lat);
-    const dLng = toRad(b.lng - a.lng);
-    const lat1 = toRad(a.lat);
-    const lat2 = toRad(b.lat);
-    const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-    return 2 * R * Math.asin(Math.sqrt(h));
-  }
 
   // ---------------------------------------------------------------------
   // アプリケーション状態
@@ -186,7 +74,12 @@
   // サイドバーで、いま開いているタブ（"route" / "facility"。編集モードは "route" 固定）。
   let sidebarTab = "route";
 
+  // 「複数選択」（選択中の点のツールバーのスイッチ）。オンの間は、点をクリック（タップ）するたびに、選択に追加・解除する。
+  // Ctrl キーのないタッチ操作で、複数選択（区間別の設定）を使えるようにするもの（v1.57.0-beta。ユーザー指定）
+  let multiSelectMode = false;
+
   function clearSelection() {
+    multiSelectMode = false;
     selectedPointIndex = null;
     selectedSet = new Set();
   }
@@ -398,337 +291,21 @@
   }
 
   // ---------------------------------------------------------------------
-  // 共通UI: トースト通知 / 確認モーダル（alert・confirmの代替）
+  // 共通UI: js/common-ui.js（window.CommonUI）
   // ---------------------------------------------------------------------
-  const toastContainerEl = document.getElementById("toast-container");
+  const {
+    toast,
+    confirmModal,
+    tutorialModalEl,
+    readTutorialHidden,
+    openTutorial,
+    closeTutorial,
+    tutorialGo,
+    setupDropdown,
+    closeAllPopovers,
+  } = window.CommonUI;
+  window.CommonUI.setContextProvider(() => ({ CATEGORIES, STATUSES, IC_TYPES, LANE_WIDTH_PX, laneWeight, laneDividerSpecs }));
 
-  function toast(message, type) {
-    const el = document.createElement("div");
-    el.className = "toast" + (type === "error" ? " error" : "");
-    el.textContent = message;
-    toastContainerEl.appendChild(el);
-    setTimeout(() => el.remove(), 2600);
-  }
-
-  const confirmModalEl = document.getElementById("confirm-modal");
-  const confirmModalMessageEl = document.getElementById("confirm-modal-message");
-  const confirmModalOkBtn = document.getElementById("confirm-modal-ok");
-  const confirmModalCancelBtn = document.getElementById("confirm-modal-cancel");
-  let confirmResolve = null;
-
-  function confirmModal(message) {
-    confirmModalMessageEl.textContent = message;
-    confirmModalEl.hidden = false;
-    return new Promise((resolve) => {
-      confirmResolve = resolve;
-    });
-  }
-
-  function closeConfirmModal(result) {
-    confirmModalEl.hidden = true;
-    if (confirmResolve) {
-      confirmResolve(result);
-      confirmResolve = null;
-    }
-  }
-
-  confirmModalOkBtn.addEventListener("click", () => closeConfirmModal(true));
-  confirmModalCancelBtn.addEventListener("click", () => closeConfirmModal(false));
-  confirmModalEl.addEventListener("click", (e) => {
-    if (e.target === confirmModalEl) closeConfirmModal(false);
-  });
-
-  // ---------------------------------------------------------------------
-  // 共通UI: マニュアル
-  // ---------------------------------------------------------------------
-  const manualModalEl = document.getElementById("manual-modal");
-  const manualPanelHowto = document.getElementById("manual-panel-howto");
-  const manualBodyEl = manualModalEl.querySelector(".modal-body");
-
-  // マニュアルの図（<figure data-figure="...">）に、SVGを入れる（初めて開いたときに1度だけ）。
-  // "tutorial:○○" は、チュートリアルの、題名に ○○ を含むスライドの図。それ以外は js/manual-figures.js の図
-  let manualFiguresBuilt = false;
-  function buildManualFigures() {
-    if (manualFiguresBuilt) return;
-    manualFiguresBuilt = true;
-    const ctx = { CATEGORIES, STATUSES, IC_TYPES, LANE_WIDTH_PX, laneWeight, laneDividerSpecs };
-    const slides = window.buildTutorialSlides ? window.buildTutorialSlides(ctx) : [];
-    manualPanelHowto.querySelectorAll("figure[data-figure]").forEach((fig) => {
-      const key = fig.dataset.figure;
-      let svg = "";
-      if (key.startsWith("tutorial:")) {
-        const slide = slides.find((s) => s.title.includes(key.slice("tutorial:".length)));
-        svg = slide ? slide.figure : "";
-      } else if (window.buildManualFigure) {
-        svg = window.buildManualFigure(key, ctx);
-      }
-      if (svg) fig.insertAdjacentHTML("afterbegin", svg);
-      else fig.hidden = true;
-    });
-  }
-
-  function openManual() {
-    buildManualFigures();
-    manualModalEl.hidden = false;
-    manualBodyEl.scrollTop = 0;
-  }
-  document.getElementById("btn-open-manual").addEventListener("click", openManual);
-
-  // 目次（上部に固定）で、いま読んでいる節を強調する。scroller はスクロールする要素、
-  // getPanel は目次（.manual-nav）を含む、いま表示中の領域を返す関数。
-  function attachNavSpy(scroller, getPanel) {
-    scroller.addEventListener("scroll", () => {
-      const panel = getPanel();
-      if (!panel) return;
-      const links = Array.from(panel.querySelectorAll(".manual-nav a"));
-      const top = scroller.getBoundingClientRect().top;
-      let currentId = null;
-      links.forEach((a) => {
-        const target = document.getElementById(a.getAttribute("href").slice(1));
-        if (target && target.getBoundingClientRect().top - top <= 90) currentId = a.getAttribute("href");
-      });
-      // 最後の節が短く、スクロールが下端で止まって基準の位置に届かないときは、最後の節を強調する
-      if (links.length && scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) currentId = links[links.length - 1].getAttribute("href");
-      links.forEach((a) => a.classList.toggle("current", a.getAttribute("href") === currentId));
-    });
-  }
-  attachNavSpy(manualBodyEl, () => manualPanelHowto);
-
-  // ---------------------------------------------------------------------
-  // 共通UI: 凡例（地図の左下のボタンで開閉する、地図の上に重ねる小さなパネル）
-  // 地図・路線図の描画と同じ定数・規則から組み立てる（js/legend.js）。初めて開くときに生成する。
-  // ---------------------------------------------------------------------
-  const legendPanelEl = document.getElementById("legend-panel");
-  const legendBodyEl = document.getElementById("legend-panel-body");
-  const legendToggleBtn = document.getElementById("btn-toggle-legend");
-  let legendBuilt = false;
-
-  function setLegendOpen(open) {
-    if (open && !legendBuilt) {
-      legendBodyEl.innerHTML = window.buildLegendHtml(
-        { CATEGORIES, STATUSES, IC_TYPES, LANE_WIDTH_PX, laneWeight, laneDividerSpecs },
-        { zoom: 1.3 }
-      );
-      legendBuilt = true;
-    }
-    legendPanelEl.hidden = !open;
-    legendToggleBtn.classList.toggle("active-toggle", open);
-    legendToggleBtn.setAttribute("aria-expanded", String(open));
-    legendToggleBtn.textContent = open ? "凡例を閉じる" : "凡例";
-  }
-
-  legendToggleBtn.addEventListener("click", () => setLegendOpen(legendPanelEl.hidden));
-  document.getElementById("legend-close").addEventListener("click", () => setLegendOpen(false));
-  attachNavSpy(legendBodyEl, () => legendBodyEl);
-  // 目次のリンクは、ページ全体ではなくパネル内でスクロールさせる
-  legendBodyEl.addEventListener("click", (e) => {
-    const a = e.target.closest(".manual-nav a");
-    if (!a) return;
-    e.preventDefault();
-    const target = document.getElementById(a.getAttribute("href").slice(1));
-    if (target) {
-      const nav = legendBodyEl.querySelector(".manual-nav");
-      const offset = target.getBoundingClientRect().top - legendBodyEl.getBoundingClientRect().top;
-      legendBodyEl.scrollTo({ top: legendBodyEl.scrollTop + offset - (nav ? nav.offsetHeight : 0) - 4 });
-    }
-  });
-
-  document.getElementById("manual-modal-close").addEventListener("click", () => (manualModalEl.hidden = true));
-  manualModalEl.addEventListener("click", (e) => {
-    if (e.target === manualModalEl) manualModalEl.hidden = true;
-  });
-
-  // ---------------------------------------------------------------------
-  // 共通UI: チュートリアル（画像と説明を1枚ずつめくる。js/tutorial.js のスライドを表示する）
-  // ページを開いたときに自動で表示する（「次回から自動で表示しない」にチェックすると出なくなる）。
-  // トップバーのボタンはない（v1.20.2で廃止）。ページを開いたときの自動表示だけ。
-  // ---------------------------------------------------------------------
-  const TUTORIAL_HIDE_KEY = "koukikaku_road_tool_tutorial_hidden";
-  const tutorialModalEl = document.getElementById("tutorial-modal");
-  const tutorialFigureEl = document.getElementById("tutorial-figure");
-  const tutorialTitleEl = document.getElementById("tutorial-title");
-  const tutorialTextEl = document.getElementById("tutorial-text");
-  const tutorialProgressEl = document.getElementById("tutorial-progress");
-  const tutorialDotsEl = document.getElementById("tutorial-dots");
-  const tutorialPrevBtn = document.getElementById("tutorial-prev");
-  const tutorialNextBtn = document.getElementById("tutorial-next");
-  const tutorialHideNextInput = document.getElementById("tutorial-hide-next");
-  let tutorialSlides = null;
-  let tutorialIndex = 0;
-
-  function readTutorialHidden() {
-    try {
-      return localStorage.getItem(TUTORIAL_HIDE_KEY) === "1";
-    } catch (e) {
-      return false;
-    }
-  }
-
-  function writeTutorialHidden(hidden) {
-    try {
-      if (hidden) localStorage.setItem(TUTORIAL_HIDE_KEY, "1");
-      else localStorage.removeItem(TUTORIAL_HIDE_KEY);
-    } catch (e) {
-      /* 保存できない環境では、毎回表示する */
-    }
-  }
-
-  function renderTutorial() {
-    const slide = tutorialSlides[tutorialIndex];
-    const last = tutorialIndex === tutorialSlides.length - 1;
-    tutorialFigureEl.innerHTML = slide.figure;
-    tutorialTitleEl.textContent = slide.title;
-    tutorialTextEl.innerHTML = slide.body;
-    tutorialProgressEl.textContent = `${tutorialIndex + 1} / ${tutorialSlides.length}`;
-    tutorialPrevBtn.disabled = tutorialIndex === 0;
-    tutorialNextBtn.textContent = last ? "はじめる" : "次へ";
-    tutorialDotsEl.innerHTML = tutorialSlides
-      .map(
-        (s, i) =>
-          `<button type="button" class="tutorial-dot${i === tutorialIndex ? " active" : ""}" data-index="${i}" role="tab" aria-selected="${i === tutorialIndex}" aria-label="${i + 1}枚目: ${escapeHtml(s.title)}"></button>`
-      )
-      .join("");
-  }
-
-  function openTutorial(index) {
-    if (!tutorialSlides) {
-      tutorialSlides = window.buildTutorialSlides({ CATEGORIES, STATUSES, IC_TYPES, LANE_WIDTH_PX, laneWeight, laneDividerSpecs });
-    }
-    tutorialIndex = index || 0;
-    tutorialHideNextInput.checked = readTutorialHidden();
-    renderTutorial();
-    tutorialModalEl.hidden = false;
-    tutorialNextBtn.focus();
-  }
-
-  function closeTutorial() {
-    writeTutorialHidden(tutorialHideNextInput.checked);
-    tutorialModalEl.hidden = true;
-  }
-
-  function tutorialGo(delta) {
-    const next = tutorialIndex + delta;
-    if (next < 0) return;
-    if (next >= tutorialSlides.length) {
-      closeTutorial(); // 最後の「はじめる」
-      return;
-    }
-    tutorialIndex = next;
-    renderTutorial();
-  }
-
-  tutorialPrevBtn.addEventListener("click", () => tutorialGo(-1));
-  tutorialNextBtn.addEventListener("click", () => tutorialGo(1));
-  document.getElementById("tutorial-skip").addEventListener("click", closeTutorial);
-  tutorialDotsEl.addEventListener("click", (e) => {
-    const dot = e.target.closest(".tutorial-dot");
-    if (!dot) return;
-    tutorialIndex = Number(dot.dataset.index);
-    renderTutorial();
-  });
-  tutorialModalEl.addEventListener("click", (e) => {
-    if (e.target === tutorialModalEl) closeTutorial();
-  });
-  tutorialHideNextInput.addEventListener("change", () => writeTutorialHidden(tutorialHideNextInput.checked));
-
-  // ---------------------------------------------------------------------
-  // 共通UI: リリースノート（js/release-notes.js のデータを表示）
-  // ---------------------------------------------------------------------
-  const releaseNotesModalEl = document.getElementById("release-notes-modal");
-  const releaseNotesListEl = document.getElementById("release-notes-list");
-
-  // バージョンの表記（例: "1.50.0-beta" → 「β版 v1.50.0-beta」、バッジは「β 1.50.0」）。
-  // 〜1.49.9 は α版（-alpha）、1.50.0 から β版（-beta）。正式版（2.0.0）は、接尾辞なし
-  const STAGES = { alpha: { mark: "α", label: "α版" }, beta: { mark: "β", label: "β版" } };
-  function versionParts(v) {
-    const m = /^(\d+\.\d+\.\d+)(?:-(\w+))?$/.exec(v || "");
-    const stage = m && m[2] ? STAGES[m[2]] : null;
-    return { base: m ? m[1] : v, stage };
-  }
-  (function renderBrandVersion() {
-    const badge = document.getElementById("brand-version");
-    if (!badge) return;
-    const { base, stage } = versionParts(window.APP_VERSION);
-    badge.textContent = (stage ? stage.mark + " " : "") + base;
-    badge.title = `${stage ? stage.label + " " : ""}v${window.APP_VERSION}。クリックでリリースノートを開く`;
-    // リリースノートを開く入口は、このバッジだけ（トップバーの「リリースノート」ボタンは廃止）
-    badge.addEventListener("click", () => {
-      renderReleaseNotes();
-      releaseNotesModalEl.hidden = false;
-    });
-  })();
-
-  function renderReleaseNotes() {
-    const cur = versionParts(window.APP_VERSION);
-    document.getElementById("release-notes-current").textContent = (cur.stage ? cur.stage.label + " " : "") + "v" + window.APP_VERSION;
-    const entries = window.RELEASE_NOTES
-      .map((rel, i) => {
-        const sections = rel.sections
-          .map(
-            (sec) =>
-              `<h4>${escapeHtml(sec.title)}</h4><ul>${sec.items.map((it) => `<li>${escapeHtml(it)}</li>`).join("")}</ul>`
-          )
-          .join("");
-        const latest = i === 0 ? '<span class="version-badge latest">最新</span>' : "";
-        return `<section class="release-entry"><h3>v${escapeHtml(rel.version)} ${latest}<span class="release-date">${escapeHtml(rel.date)}</span></h3>${sections}</section>`;
-      });
-    // 最新版だけを表示し、それ以前の版は「過去のバージョンを確認する」のアコーディオン（初期は閉じた状態）にまとめる
-    const past = window.RELEASE_NOTES.slice(1);
-    const pastHtml = past.length
-      ? `<details class="accordion release-past"><summary>過去のバージョンを確認する<span class="acc-summary">${past.length}件（v${escapeHtml(
-          past[0].version
-        )} 〜 v${escapeHtml(past[past.length - 1].version)}）</span></summary><div class="accordion-body">${entries.slice(1).join("")}</div></details>`
-      : "";
-    releaseNotesListEl.innerHTML = (entries[0] || "") + pastHtml;
-  }
-
-  document.getElementById("release-notes-close").addEventListener("click", () => (releaseNotesModalEl.hidden = true));
-  releaseNotesModalEl.addEventListener("click", (e) => {
-    if (e.target === releaseNotesModalEl) releaseNotesModalEl.hidden = true;
-  });
-
-  // ---------------------------------------------------------------------
-  // 共通UI: ドロップダウン（ポップオーバー）
-  // ---------------------------------------------------------------------
-  function setupDropdown(buttonId, popoverId, onOpen) {
-    const btn = document.getElementById(buttonId);
-    const pop = document.getElementById(popoverId);
-    btn.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const willOpen = pop.hidden;
-      closeAllPopovers();
-      if (willOpen) {
-        pop.hidden = false;
-        if (onOpen) onOpen();
-        keepPopoverInView(pop);
-      }
-    });
-    pop.addEventListener("click", (e) => e.stopPropagation());
-  }
-
-  // ポップオーバーが画面の左右にはみ出さないよう、位置をずらす（ボタンの位置や画面の幅によらず、全体が見えるように）。
-  // 内容（保存済みマップの数など）が変わっても、開くたびに測り直す
-  function keepPopoverInView(pop) {
-    const MARGIN = 8;
-    pop.style.left = "";
-    pop.style.right = "";
-    const base = pop.getBoundingClientRect();
-    let shift = 0;
-    if (base.right > window.innerWidth - MARGIN) shift = window.innerWidth - MARGIN - base.right;
-    if (base.left + shift < MARGIN) shift = MARGIN - base.left;
-    if (shift !== 0) {
-      // 親（.dropdown）の左端を基準にした位置。CSSの right 指定（狭い画面）と両立しないよう、right は解除する
-      const parentLeft = pop.offsetParent ? pop.offsetParent.getBoundingClientRect().left : 0;
-      pop.style.left = base.left + shift - parentLeft + "px";
-      pop.style.right = "auto";
-    }
-  }
-
-  function closeAllPopovers() {
-    document.querySelectorAll(".popover").forEach((p) => (p.hidden = true));
-  }
-
-  document.addEventListener("click", closeAllPopovers);
 
   // ---------------------------------------------------------------------
   // 地図初期化
@@ -862,7 +439,7 @@
   function renderMapHint() {
     const route = getActiveRoute();
     if (currentMap.routes.length === 0 && currentMode === "edit") {
-      mapHintEl.textContent = "右側の「路線を追加する」を押して、始めましょう";
+      mapHintEl.textContent = "「路線を追加する」（サイドバー）を押して、始めましょう";
       mapHintEl.hidden = false;
     } else if (route && route.points.length === 0) {
       mapHintEl.textContent = "地図をクリックして、路線の始点を置いてください";
@@ -1038,7 +615,7 @@
         clearSelection();
       }
       const oe = e.originalEvent;
-      if (oe && (oe.ctrlKey || oe.metaKey)) {
+      if ((oe && (oe.ctrlKey || oe.metaKey)) || multiSelectMode) {
         toggleSelect(ic.pointIndex);
       } else if (selectedSet.size === 1 && selectedSet.has(ic.pointIndex)) {
         clearSelection(); // 操作点と同じく、選択中の点をもう一度クリックすると、選択を解除する
@@ -1114,8 +691,8 @@
       marker.on("click", (e) => {
         L.DomEvent.stop(e);
         const oe = e.originalEvent;
-        if (oe && (oe.ctrlKey || oe.metaKey)) {
-          toggleSelect(idx); // Ctrl（Mac: Command）+クリックで複数選択
+        if ((oe && (oe.ctrlKey || oe.metaKey)) || multiSelectMode) {
+          toggleSelect(idx); // Ctrl（Mac: Command）+クリック、または、ツールバーの「複数選択」がオンのとき（タッチ用）に、複数選択
         } else if (selectedSet.size === 1 && selectedSet.has(idx)) {
           clearSelection();
         } else {
@@ -1986,7 +1563,7 @@
     statusPresetsEl.querySelectorAll("button").forEach((btn) => {
       const val = btn.dataset.status;
       if (val === "") return; // statusNoneBtn 自身（active切替は下で行う）
-      btn.classList.toggle("active", range ? val === (statusSeg ? statusSeg.status : " ") : val === route.status);
+      btn.classList.toggle("active", range ? val === (statusSeg ? statusSeg.status : "\u0000") : val === route.status);
     });
     statusNoneBtn.classList.toggle("active", !!range && !statusSeg);
 
@@ -2780,9 +2357,7 @@
     const minGapPx = H ? 150 : 53; // ノード同士の最低間隔
     const PITCH = 470; // （縦）分岐する路線の列の間隔（px。本線の文字と、分岐する路線の番号の丸が近づきすぎないように）
     const BRANCH_ROOM = H ? 110 : 46; // 分岐する路線があるJCTの次のノードとの間に、分岐の線を通すために空ける余白（px）
-    // JCTのノードの位置から、分岐の線を出す位置まで（px）。v1.55.0-betaで、JCTの記号のすぐそばから
-    // 分岐するように縮めた（ユーザー指定。以前は90/76pxと、記号からかなり離れた位置から出ていた）
-    const CONNECT_Y = H ? 30 : 26;
+    const CONNECT_Y = H ? 90 : 76; // JCTのノードの位置から、分岐の線を出す位置まで（px。v1.55.0-betaで縮めたが、v1.56.0-betaで元に戻した）
     const BRANCH_HEAD = H ? 60 : 34; // 分岐する路線の列（行）の端から、最初のノードまで（px。縦は、路線名の見出しの高さ）
     // 分岐の線の、角の丸みの半径（px）。細い道路は小さく（最小14px）、太い道路・暫定の枠は、内側の線が潰れないよう、半幅＋4pxにする
     const CORNER_MIN = 14;
@@ -2831,6 +2406,14 @@
       if (allowBackward) {
         for (;;) {
           const first = chain[0];
+          // この並びの前の端（first の入口側）に、順接の子がつながっている場合（例: 本線の始点に、西からの延伸を順接）。
+          // 子は、この端に自分の始点か終点をつなぐので、終点をつないでいるとき（at: "end"）は、そのまま（始点→終点）読む
+          const inIdx = first.dir ? 0 : first.route.points.length - 1;
+          const prefix = straightChildAt(first.route, inIdx);
+          if (prefix && !chain.some((c) => c.route === prefix)) {
+            chain.unshift({ route: prefix, dir: prefix.branchFrom.at === "end" });
+            continue;
+          }
           const bf = first.route.branchFrom;
           if (!bf || bf.mode !== "straight") break;
           const parent = routeById(bf.routeId);
@@ -2869,17 +2452,19 @@
     const nodeHtml = (e, pos, distText, colorStyle) => {
       const ic = e.ic;
       const def = IC_TYPES[ic.type] || IC_TYPES.ic;
-      // 「分岐」（順接は除く。順接は列を作らないので、テキストの案内は不要）
-      const kids = branchesOf(ic).filter((b) => b.branchFrom.routeId === e.route.id && (b.branchFrom.mode || "branch") === "branch");
-      const branchHtml = kids.length
-        ? `<div class="diagram-node-branch">→ 分岐: ${kids
-            .map((b) => `<button type="button" class="diagram-branch-link" data-route-id="${escapeHtml(b.id)}" title="${escapeHtml(routeLabel(b))}を選ぶ">${escapeHtml(shortRouteName(b))}</button>`)
-            .join("、")}</div>`
-        : "";
-      // 分岐がある施設は、施設名・番号を、分岐の線と反対側に表示する（v1.55.0-beta。ユーザー指定。重ならないように）
-      const flip = kids.length > 0;
+      // 「→ 分岐: ○○」（列を作る分岐）と「→ 順接: ○○」（同じ直線の続き。路線名が変わる継ぎ目の注記。v1.56.0-beta）
+      const linkList = (list) =>
+        list
+          .map((b) => `<button type="button" class="diagram-branch-link" data-route-id="${escapeHtml(b.id)}" title="${escapeHtml(routeLabel(b))}を選ぶ">${escapeHtml(shortRouteName(b))}</button>`)
+          .join("、");
+      const kidsOfMode = (mode) => branchesOf(ic).filter((b) => b.branchFrom.routeId === e.route.id && (b.branchFrom.mode || "branch") === mode);
+      const kids = kidsOfMode("branch");
+      const straightKids = kidsOfMode("straight");
+      const branchHtml =
+        (kids.length ? `<div class="diagram-node-branch">→ 分岐: ${linkList(kids)}</div>` : "") +
+        (straightKids.length ? `<div class="diagram-node-branch">→ 順接: ${linkList(straightKids)}</div>` : "");
       return `
-          <div class="diagram-node${H ? " h" : ""}${flip ? " flip" : ""}" style="${H ? "left" : "top"}:${pos}px;${colorStyle || ""}">
+          <div class="diagram-node${H ? " h" : ""}" style="${H ? "left" : "top"}:${pos}px;${colorStyle || ""}">
             ${
               e.displayNo
                 ? `<div class="diagram-node-number${e.displayNo.length >= 5 ? " len5" : e.displayNo.length >= 3 ? " len3" : ""}">${escapeHtml(e.displayNo)}</div>`
@@ -3511,14 +3096,6 @@
   // ---------------------------------------------------------------------
   // ユーティリティ
   // ---------------------------------------------------------------------
-  function escapeHtml(str) {
-    return String(str)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
   // ---------------------------------------------------------------------
   // 選択中の点のツールバー（地図の上に重ねて表示。v1.51.0-beta で、右クリックメニューを廃止した代わりに追加）
   //   ロック・解除 / 削除 / 選択の解除。施設設定は、サイドバーに常設する（renderFacilitySettings）
@@ -3527,14 +3104,18 @@
   const pointToolbarLabelEl = document.getElementById("point-toolbar-label");
   const btnTogglePointLock = document.getElementById("btn-toggle-point-lock");
   const btnDeletePoints = document.getElementById("btn-delete-points");
+  const btnMultiSelect = document.getElementById("btn-multi-select");
 
   function renderPointToolbar() {
     const route = getActiveRoute();
     if (currentMode !== "edit" || !route || selectedSet.size === 0) {
+      multiSelectMode = false;
       pointToolbarEl.hidden = true;
       return;
     }
     pointToolbarEl.hidden = false;
+    btnMultiSelect.classList.toggle("active", multiSelectMode);
+    btnMultiSelect.setAttribute("aria-pressed", String(multiSelectMode));
     const targets = Array.from(selectedSet);
     const multi = targets.length > 1;
     pointToolbarLabelEl.textContent = multi ? `選択中の${targets.length}点` : `点${targets[0] + 1}`;
@@ -3547,6 +3128,12 @@
     btnDeletePoints.disabled = allLocked;
     btnDeletePoints.title = allLocked ? "ロック中の点は削除できません" : "";
   }
+
+  btnMultiSelect.addEventListener("click", () => {
+    multiSelectMode = !multiSelectMode;
+    renderPointToolbar();
+    renderMapHint();
+  });
 
   btnTogglePointLock.addEventListener("click", () => {
     const route = getActiveRoute();

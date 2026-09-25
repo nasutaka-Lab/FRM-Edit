@@ -809,12 +809,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   padding: 0;
   text-align: center;
 }
-/* 分岐がある施設は、番号・名称を、線をはさんで反対側（上）に表示する（v1.55.0-beta。ユーザー指定） */
-.diagram-node.h.flip .diagram-node-number { top: calc(var(--row-head, 0px) + 71.5px); }
-.diagram-node.h.flip .diagram-node-info {
-  top: calc(var(--row-head, 0px) + 32px);
-  transform: translateY(-100%);
-}
 .diagram-line-seg.h.status-construction {
   background: repeating-linear-gradient(to right, var(--diagram-color, var(--color-primary)) 0 11px, transparent 11px 17px);
 }
@@ -823,7 +817,7 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 }
 .diagram-endpoint.h { position: absolute; margin: 0; padding: 0; height: 22px; white-space: nowrap; }
 .diagram-group { flex: none; padding-bottom: var(--space-3); border-radius: var(--radius-md); }
-.diagram-group { padding-left: 24px; } /* v1.55.0-betaで12→24pxに（分岐がある施設の、左に反転したラベル分の余白） */
+.diagram-group { padding-left: 12px; }
 /* 図が複数あるときだけ、選択中の路線を含む図を色づける（1つのときは全体が色づいて意味がないため） */
 #route-diagram.multi-groups .diagram-group.selected { background: var(--color-primary-light); box-shadow: 0 0 0 10px var(--color-primary-light); }
 .diagram-select { cursor: pointer; }
@@ -1000,18 +994,6 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   padding-left: 24.2px;
   font-size: 13.2px;
   line-height: 1.4;
-}
-/* 分岐がある施設は、番号・名称を、マークをはさんで反対側（左）に表示する（v1.55.0-beta。ユーザー指定。
-   分岐の線と重ならないように。マークの位置〔＝路線の線の位置〕自体は動かさない） */
-.diagram-node.flip .diagram-node-number { left: 63px; }
-.diagram-node.flip .diagram-node-info {
-  position: absolute;
-  top: 0;
-  margin: 0;
-  padding: 0 4px 0 0;
-  left: -72px;
-  width: 92px;
-  text-align: right;
 }
 /* 施設どうしの間の距離（IC間距離）。線の上に、白地の小さなラベルで重ねる */
 .diagram-gap {
@@ -1667,6 +1649,8 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
 }
+.point-toolbar .toggle-btn.active { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.point-toolbar .tb-short { display: none; }
 .point-toolbar-label {
   font-size: 13px;
   color: var(--color-text-muted);
@@ -2063,4 +2047,21 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
   white-space: normal;
   text-align: right;
   line-height: 1.4;
+}
+
+/* スマホ（v1.57.1-beta。ユーザー指定〔点検〕）: 選択中の点のツールバーは、1行に収める（2行だと、小さい地図の3分の1を隠し、
+   選んだ点まで隠れていた）。「Esc」はスマホにないので、短い文言にする。路線図の操作ボタンは、図の見出しに重ならないよう、図を下げる */
+@media (max-width: 760px) {
+  .point-toolbar { flex-wrap: nowrap; gap: 4px; padding: 4px; }
+  .point-toolbar .tb-long { display: none; }
+  .point-toolbar .tb-short { display: inline; }
+  .point-toolbar .btn { padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+  .point-toolbar-label { font-size: 12px; }
+  #route-diagram { padding-top: 48px; }
+}
+/* タッチ操作: 切り替えボタン・種別ボタン・地図の拡大縮小ボタンも、指で押しやすい高さにする */
+@media (pointer: coarse) {
+  .segmented button { min-height: 40px; }
+  .preset-btn { min-height: 40px; }
+  .leaflet-touch .leaflet-bar a { width: 40px; height: 40px; line-height: 40px; }
 }

@@ -185,7 +185,7 @@
             <div class="field">
               <label>区間ごとの設定一覧</label>
               <div id="range-segments-list" class="list-box"></div>
-              <p class="hint-text">地図上で、<span class="kbd">Ctrl</span>+クリックして2点以上を選ぶと、上の状態・色・車線数・供用形態が、その区間だけの設定になります（選ぶと、その場ですぐに反映されます）。</p>
+              <p class="hint-text">地図上で、<span class="kbd">Ctrl</span>+クリック（タッチでは、ツールバーの「複数選択」）して2点以上を選ぶと、上の状態・色・車線数・供用形態が、その区間だけの設定になります（選ぶと、その場ですぐに反映されます）。</p>
             </div>
 
             <!-- 施設設定（旧「IC・JCT設定」。v1.51.0-beta で、右クリックメニューを廃止し、ここに統合。
@@ -234,9 +234,10 @@
            点を選んでいるとき（編集モード）だけ表示する。ロック切り替え・削除・選択解除 -->
       <div id="point-toolbar" class="point-toolbar" hidden>
         <span id="point-toolbar-label" class="point-toolbar-label"></span>
+        <button id="btn-multi-select" type="button" class="btn small toggle-btn" aria-pressed="false" title="オンの間は、点をタップ（クリック）するたびに、選択に追加・解除します（Ctrl+クリックと同じ。タッチ操作用）">複数選択</button>
         <button id="btn-toggle-point-lock" type="button" class="btn small">ロック</button>
         <button id="btn-delete-points" type="button" class="btn small danger-outline">削除</button>
-        <button id="btn-clear-selection" type="button" class="btn ghost small">選択を解除 (Esc)</button>
+        <button id="btn-clear-selection" type="button" class="btn ghost small"><span class="tb-long">選択を解除 (Esc)</span><span class="tb-short">解除</span></button>
       </div>
       <div id="diagram-area" hidden>
         <!-- 拡大・縮小の操作（スクロールしても、図の領域の右上に固定する。高さ0の台の上に、絶対配置で置く） -->
@@ -348,7 +349,7 @@
         <p><b>架空道路マップ</b>は、実在の地図の上に、架空の高速道路や国道などを描くツールです。路線ごとに、種類・状態（供用中、事業中など）・車線数を設定でき、描いた路線は「路線図」で、実際の高速道路の路線図のような模式図にまとめて確認できます。</p>
         <h4>はじめの3ステップ</h4>
         <div class="manual-quick">
-          <div class="manual-quick-step"><b><span class="num">1</span>路線を追加</b>右側の「路線を追加」を押します</div>
+          <div class="manual-quick-step"><b><span class="num">1</span>路線を追加</b>サイドバー（スマホでは、下のシート）の「路線を追加」を押します</div>
           <div class="manual-quick-step"><b><span class="num">2</span>始点から順に点を打つ</b>最初に始点、順に途中の点を置き、最後に、終点の「決定」スイッチをオンにします</div>
           <div class="manual-quick-step"><b><span class="num">3</span>点を選ぶ</b>自動で開く「施設設定」欄で、施設（IC・JCTなど）を設定します</div>
         </div>
@@ -392,7 +393,7 @@
         <ul>
           <li>サイドバーは、画面の下から出る<b>シート</b>になります。シートの上端の「設定を開く／設定を閉じる」で開閉します。閉じると、地図が画面いっぱいに広がります。</li>
           <li>点をタップすると選ばれ、シートが自動で開いて施設設定欄が表示されます。路線図に切り替えると、シートは閉じます。</li>
-          <li>Ctrlキーを使う複数選択は、スマホでは使えません。</li>
+          <li>Ctrlキーがないので、複数の点を選ぶときは、点を1つ選んだあと、地図の上のツールバーの「複数選択」をオンにして、ほかの点をタップします（オンの間は、タップするたびに、選択に追加・解除されます。区間別の設定にも使えます）。</li>
         </ul>
 
         <h3 id="manual-h-route">路線を作る</h3>
@@ -414,7 +415,7 @@
             <tr><th>点を動かす</th><td>点をドラッグします。</td></tr>
             <tr><th>点を増やす</th><td>点と点の間にある半透明の点（中間点）をドラッグします。その位置に、新しい点が追加されます。</td></tr>
             <tr><th>点を選ぶ</th><td>点をクリックします。もう一度クリックすると、選択を解除できます。</td></tr>
-            <tr><th>複数の点を選ぶ</th><td><span class="kbd">Ctrl</span>（Macは<span class="kbd">Command</span>）を押しながらクリックします。選んだ点は、まとめてドラッグ移動・削除・IC・JCTの設定ができます。</td></tr>
+            <tr><th>複数の点を選ぶ</th><td><span class="kbd">Ctrl</span>（Macは<span class="kbd">Command</span>）を押しながらクリックします。Ctrlキーがないとき（スマホなど）は、点を1つ選んだあと、ツールバーの「複数選択」をオンにして、ほかの点をタップします。選んだ点は、まとめてドラッグ移動・削除・IC・JCTの設定ができます。</td></tr>
             <tr><th>点を削除する</th><td>点を選んで、地図上に出る「選択中の点」ツールバーの「削除」を押すか、<span class="kbd">Delete</span>キーを押します。ロック中の点は削除できません。</td></tr>
             <tr><th>点をロックする／解除する</th><td>点を選んで、地図上の「選択中の点」ツールバーの「ロック」を押します。ロック中の点は、移動・削除ができません（四角形で表示されます）。終点のロックだけは、サイドバーの終点の行のスイッチで解除します。</td></tr>
             <tr><th>施設を設定する</th><td>点を選ぶと、サイドバーに、施設設定欄が自動で開きます。</td></tr>
@@ -425,6 +426,7 @@
         <table class="manual-def">
           <thead><tr><th>項目</th><th>内容</th></tr></thead>
           <tbody>
+            <tr><th>複数選択</th><td>オンの間は、点をクリック（タップ）するたびに、選択に追加・解除します（Ctrl+クリックと同じです。Ctrlキーのないスマホなどで使います）。選択を解除すると、オフに戻ります。</td></tr>
             <tr><th>ロック</th><td>選んでいる点をロック／ロック解除します。</td></tr>
             <tr><th>削除</th><td>選んでいる点を削除します（ロック中の点を除く）。</td></tr>
             <tr><th>選択を解除</th><td>点の選択を解除します（<span class="kbd">Esc</span>キーと同じです）。</td></tr>
@@ -537,8 +539,7 @@
           <li>分岐する路線の施設は、「分岐点から◯km」で表示されます。番号・IC間距離は、分岐する路線の中で数えます。</li>
           <li>分岐が複数あれば、右に列が増えます。分岐する路線からさらに分岐する路線も、その右に並びます。</li>
           <li>分岐元の施設に「→ 分岐: ○○線」と表示されます。名前をクリックすると、その路線を選べます。分岐元の路線の分岐欄には、「この路線から分岐している路線」の一覧が表示されます。</li>
-          <li>分岐がある施設は、番号・名称が、分岐の線と反対側に表示されます（重ならないように）。</li>
-          <li>「順接」は、列を作らず、分岐元の路線と同じ直線の続きとして表示されます。「→ 分岐:」の注記や、施設番号・IC間距離の区切りも出ません（分岐元の路線から、通しで数えます）。</li>
+          <li>「順接」は、列を作らず、分岐元の路線と同じ直線の続きとして表示されます。施設番号・IC間距離は、分岐元の路線から通しで数えます。路線名が変わる継ぎ目の施設には、「→ 順接: ○○線」と表示されます（名前をクリックすると、その路線を選べます）。</li>
         </ul>
 
         <h3 id="manual-h-diagram">路線図</h3>
@@ -658,6 +659,8 @@ SOFTWARE.</pre>
 <script src="js/legend.js"></script>
 <script src="js/tutorial.js"></script>
 <script src="js/manual-figures.js"></script>
+<script src="js/road-model.js"></script>
+<script src="js/common-ui.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
