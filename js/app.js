@@ -2155,6 +2155,139 @@
     scrollDiagramToRoute(activeRouteId);
   });
 
+  // 路線図の画像書き出し（v1.59.0）。図は HTML/CSS なので、複製して（画面の拡大率・選択の強調は外す）、
+  // 見た目に効くスタイルを要素ごとに書き込み、SVG の <foreignObject> に包んで <canvas> に描いて、PNG / JPEG / WebP にする。
+  // 外部のCSS・フォントは、画像の中からは読めないので、スタイルは書き込む（フォントは、端末にあるものになる）
+  const EXPORT_STYLE_PROPS = [
+    "display", "position", "left", "top", "right", "bottom", "width", "height", "min-width", "min-height", "max-width", "max-height",
+    "box-sizing", "margin-top", "margin-right", "margin-bottom", "margin-left", "padding-top", "padding-right", "padding-bottom", "padding-left",
+    "border-top-width", "border-right-width", "border-bottom-width", "border-left-width", "border-top-style", "border-right-style",
+    "border-bottom-style", "border-left-style", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color",
+    "border-top-left-radius", "border-top-right-radius", "border-bottom-left-radius", "border-bottom-right-radius",
+    "background-color", "background-image", "color", "opacity", "box-shadow", "z-index", "overflow", "visibility",
+    "font-family", "font-size", "font-weight", "font-style", "line-height", "letter-spacing", "text-align", "text-decoration-line",
+    "white-space", "overflow-wrap", "word-break", "writing-mode", "text-orientation", "text-overflow", "vertical-align",
+    "flex-direction", "flex-wrap", "flex-grow", "flex-shrink", "flex-basis", "align-items", "align-self", "justify-content", "gap",
+    "transform", "transform-origin", "clip-path", "list-style-type",
+    "fill", "fill-opacity", "stroke", "stroke-width", "stroke-dasharray", "stroke-dashoffset", "stroke-linecap", "stroke-linejoin", "stroke-opacity",
+  ];
+  const EXPORT_MAX_SIDE = 16000; // canvas の大きさの上限（ブラウザごとに違うが、これ以内なら、たいてい描ける）
+  const EXPORT_MAX_AREA = 80e6;
+
+  const exportPopoverEl = document.getElementById("diagram-export-popover");
+  const exportFormatEl = document.getElementById("export-format");
+  const exportTransparentEl = document.getElementById("export-transparent");
+  setupDropdown("btn-diagram-export-toggle", "diagram-export-popover");
+  exportFormatEl.addEventListener("change", () => {
+    const jpeg = exportFormatEl.value === "jpeg";
+    exportTransparentEl.disabled = jpeg;
+    if (jpeg) exportTransparentEl.checked = false;
+  });
+
+  // 書き出す図の複製を作り、スタイルを書き込んだ HTML と大きさを返す。DOM は、同期的に作って、すぐ片づける
+  function buildExportMarkup(scope) {
+    const host = document.createElement("div");
+    host.style.cssText = "position:fixed;left:-100000px;top:0;pointer-events:none;";
+    const clone = routeDiagramEl.cloneNode(true);
+    clone.removeAttribute("hidden");
+    clone.style.transform = "";
+    clone.querySelectorAll(".diagram-hl").forEach((el) => el.remove());
+    if (scope === "selected") {
+      const keep = clone.querySelector(".diagram-group.selected");
+      if (!keep) return null;
+      clone.querySelectorAll(".diagram-group").forEach((g) => {
+        if (g !== keep) g.remove();
+      });
+    }
+    // 選択の強調（背景・色づけ）は、書き出しに含めない
+    clone.classList.remove("multi-groups");
+    clone.querySelectorAll(".selected, .selected-route").forEach((el) => el.classList.remove("selected", "selected-route"));
+    host.appendChild(clone);
+    document.body.appendChild(host);
+    try {
+      const width = clone.offsetWidth;
+      const height = clone.offsetHeight;
+      const all = [clone, ...clone.querySelectorAll("*")];
+      const styles = all.map((el) => {
+        const cs = getComputedStyle(el);
+        return EXPORT_STYLE_PROPS.map((p) => p + ":" + cs.getPropertyValue(p)).join(";");
+      });
+      all.forEach((el, i) => {
+        const inline = el.getAttribute("style") || "";
+        el.setAttribute("style", inline + ";" + styles[i]); // 同じ名前は、あとのもの（計算済みの値）が勝つ
+        el.removeAttribute("class");
+        el.removeAttribute("title");
+      });
+      clone.style.position = "absolute";
+      clone.style.left = "0px";
+      clone.style.top = "0px";
+      clone.style.width = width + "px";
+      clone.style.height = height + "px";
+      clone.style.transform = "none";
+      clone.setAttribute("xmlns", "http://www.w3.org/1999/xhtml");
+      return { html: new XMLSerializer().serializeToString(clone), width, height };
+    } finally {
+      host.remove();
+    }
+  }
+
+  async function exportDiagramImage() {
+    const scope = document.getElementById("export-scope").value;
+    const format = exportFormatEl.value;
+    const mime = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp" }[format] || "image/png";
+    const transparent = exportTransparentEl.checked && format !== "jpeg";
+    let scale = Number(document.getElementById("export-scale").value) || 2;
+    const markup = buildExportMarkup(scope);
+    if (!markup) {
+      toast("選択中の路線を含む図がありません（路線図にできる路線を選んでください）", "error");
+      return;
+    }
+    const { html, width, height } = markup;
+    const limit = Math.min(EXPORT_MAX_SIDE / Math.max(width, height), Math.sqrt(EXPORT_MAX_AREA / (width * height)));
+    let shrunk = false;
+    if (scale > limit) {
+      scale = limit;
+      shrunk = true;
+    }
+    const svg =
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+      `<foreignObject x="0" y="0" width="${width}" height="${height}">${html}</foreignObject></svg>`;
+    try {
+      const img = new Image();
+      img.decoding = "async";
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error("image load"));
+        img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.floor(width * scale));
+      canvas.height = Math.max(1, Math.floor(height * scale));
+      const ctx = canvas.getContext("2d");
+      if (!transparent) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));
+      if (!blob) throw new Error("toBlob");
+      const base = (mapNameInput.value || currentMap.name || "路線図").trim() || "路線図";
+      const a = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      a.href = url;
+      a.download = `${base}_路線図${scope === "selected" ? "_選択中" : ""}.${format === "jpeg" ? "jpg" : format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      closeAllPopovers();
+      toast(shrunk ? "保存しました（図が大きいので、倍率を下げました）" : "画像を保存しました");
+    } catch (err) {
+      toast("画像を書き出せませんでした（ブラウザが対応していない可能性があります）", "error");
+    }
+  }
+  document.getElementById("btn-diagram-export").addEventListener("click", exportDiagramImage);
+
   // Ctrl（Macは Command）+ホイール、トラックパッドのピンチ: カーソルの位置を中心に拡大・縮小
   diagramAreaEl.addEventListener(
     "wheel",
@@ -2172,7 +2305,7 @@
     let pan = null; // { x, y, left, top, moved }
     let pinch = null; // { dist, scale }
     let suppressClick = false;
-    const interactive = (el) => !!el.closest("button, a, input, select, .diagram-select");
+    const interactive = (el) => !!el.closest("button, a, input, select, label, .popover, .diagram-select");
     const distance = () => {
       const [p, q] = [...pointers.values()];
       return Math.hypot(p.x - q.x, p.y - q.y);

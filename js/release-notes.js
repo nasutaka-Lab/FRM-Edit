@@ -1,8 +1,20 @@
 // リリースノート（画面の「リリースノート」に表示される、利用者向けの更新内容）。
 // 新しい版は配列の先頭に追加すること。CHANGELOG.md（開発者向け）と内容を揃える。
-window.APP_VERSION = "1.58.0-beta";
+window.APP_VERSION = "1.59.0-beta";
 
 window.RELEASE_NOTES = [
+  {
+    version: "1.59.0-beta",
+    date: "2026-09-25",
+    sections: [
+      {
+        title: "追加",
+        items: [
+          "路線図を、画像ファイルに書き出せるようになりました（路線図の右上の「画像で保存」）。形式は PNG・JPEG・WebP、範囲は「すべての図」か「選択中の図だけ」、大きさは1〜3倍から選べます。PNG・WebP は、背景を透明にもできます",
+        ],
+      },
+    ],
+  },
   {
     version: "1.58.0-beta",
     date: "2026-09-25",

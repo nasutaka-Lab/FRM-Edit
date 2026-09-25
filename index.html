@@ -248,6 +248,39 @@
             <button id="btn-diagram-zoom-out" type="button" class="btn small" title="縮小（Ctrl+ホイールでも）">縮小</button>
             <button id="btn-diagram-zoom-in" type="button" class="btn small" title="拡大（Ctrl+ホイールでも）">拡大</button>
             <button id="btn-diagram-zoom-fit" type="button" class="btn small" title="全体が見える大きさにする">全体</button>
+            <div class="dropdown">
+              <button id="btn-diagram-export-toggle" type="button" class="btn small" title="路線図を画像ファイルに書き出す">画像で保存</button>
+              <div id="diagram-export-popover" class="popover diagram-export-popover" hidden>
+                <div class="popover-title">路線図を画像で保存</div>
+                <div class="field">
+                  <label for="export-scope">範囲</label>
+                  <select id="export-scope">
+                    <option value="all">すべての図</option>
+                    <option value="selected">選択中の図だけ</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="export-format">形式</label>
+                    <select id="export-format">
+                      <option value="png">PNG</option>
+                      <option value="jpeg">JPEG</option>
+                      <option value="webp">WebP</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label for="export-scale">大きさ</label>
+                    <select id="export-scale">
+                      <option value="1">1倍</option>
+                      <option value="2" selected>2倍</option>
+                      <option value="3">3倍</option>
+                    </select>
+                  </div>
+                </div>
+                <label class="export-check"><input id="export-transparent" type="checkbox"> 背景を透明にする（PNG・WebP）</label>
+                <button id="btn-diagram-export" type="button" class="btn primary full">画像を保存</button>
+              </div>
+            </div>
           </div>
         </div>
         <div id="diagram-empty" class="empty-state">
@@ -555,6 +588,17 @@
           <li><b>線の太さと区分線</b>：線の太さは、車線数に応じて変わります（1〜8車線）。供用中の区間には、地図と同じ車線の区分線（通常の2車線は白の破線、暫定2車線は黄色の実線、4車線以上は白の太い実線と車線境界の白の破線）が入ります。暫定の区間には、将来の幅（＋2車線）を示す点線の枠が両側に付きます。事業中・計画中の区間には、区分線・枠は付きません。</li>
           <li><b>区間別の設定がある路線</b>：車線数が基本と違う区間は、線の太さが変わり、距離のあとに車線数（例: 5.3km・4車線）が付きます。状態が違う区間は、区間ごとに線の種類が変わります。</li>
         </ul>
+        <h4>画像で保存</h4>
+        <p>図の右上の「画像で保存」から、路線図を画像ファイルに書き出せます。</p>
+        <table class="manual-def">
+          <tbody>
+            <tr><th>範囲</th><td>「すべての図」または「選択中の図だけ」を選びます。</td></tr>
+            <tr><th>形式</th><td>PNG（標準。文字や線がくっきりします）、JPEG（ファイルが小さくなります。背景は白）、WebP のどれかを選びます。</td></tr>
+            <tr><th>大きさ</th><td>1倍・2倍・3倍から選びます。画面の拡大・縮小とは関係なく、その倍率で書き出します。図がとても大きいときは、自動で倍率を下げます。</td></tr>
+            <tr><th>背景</th><td>標準は白です。「背景を透明にする」を選ぶと、PNG・WebP は透明になります。</td></tr>
+          </tbody>
+        </table>
+        <p class="manual-note">選択の強調（緑の色づけ）は、画像には含まれません。フォントは、お使いの端末にあるものになるため、画面と少し見た目が違うことがあります。</p>
         <h4>施設の表示設定（「施設」タブ）</h4>
         <ul>
           <li>IC・JCTごとに、施設番号を「自動」「手動で入力（例: 9-1。6文字まで）」「表記しない」から選べます。手動・表記しないの施設は、自動の連番を消費しません（例：途中のICを「表記しない」にしても、ほかの番号は途切れずに続きます）。</li>
