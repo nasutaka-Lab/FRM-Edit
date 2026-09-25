@@ -2495,6 +2495,50 @@
 
     const visited = new Set();
 
+    // 分岐の路線（parts[1〜]）に、列（横向きは行）の番号 p.col を割り当てて、使う列の数を返す。
+    // 以前は、分岐ごとに列を1つ増やしていたので、図が横に広がっていた。ここでは、次の条件を満たす最も近い列に置く:
+    //  ・分岐元の列より右（下）である
+    //  ・その列の、この路線が使う範囲（主軸方向。見出し・強調の背景ぶんの余白つき）が、ほかの路線と重ならない
+    //  ・分岐元から、その列まで伸ばす分岐の線が横切る途中の列が、その高さ（位置）で空いている（線が、ほかの路線を貫かない）
+    // 分岐の線が横切った範囲も、使用中として記録するので、あとから置く路線が、その線を貫くこともない。
+    // 横向きは、行の見出しの高さ（headH）が、行の中で同じ路線どうしだけを、同じ行にする（線の位置が、見出しの高さで決まるため）。
+    // 路線は、分岐元より先に置かない（作った順＝分岐元が先）
+    const packLanes = (parts, connectors) => {
+      const parentOf = new Map(connectors.map((c) => [c.to, c.from]));
+      const lanes = []; // { used: [[a, b]…], headH }
+      const free = (lane, a, b) => !lane || lane.used.every(([x, y]) => b <= x || a >= y);
+      const mark = (c, a, b, headH) => {
+        if (!lanes[c]) lanes[c] = { used: [], headH: null };
+        if (lanes[c].headH == null && headH != null) lanes[c].headH = headH; // 分岐の線が横切っただけの行は、見出しの高さが未定
+        lanes[c].used.push([a, b]);
+      };
+      parts[0].col = 0;
+      mark(0, -Infinity, Infinity, parts[0].headH);
+      for (let idx = 1; idx < parts.length; idx++) {
+        const p = parts[idx];
+        const par = parts[parentOf.has(idx) ? parentOf.get(idx) : 0];
+        const a = H ? p.top - 70 : p.top - 16; // 使う範囲（強調の背景の余白を含む）
+        const b = p.top + p.height + (H ? 84 : 16);
+        const ca = p.top - 26; // 分岐の線が、途中の列を横切る範囲
+        const cb = p.top + 26;
+        let c = par.col + 1;
+        for (;; c++) {
+          const lane = lanes[c];
+          if (H && lane && lane.headH != null && lane.headH !== p.headH) continue;
+          if (!free(lane, a, b)) continue;
+          let clear = true;
+          for (let m = par.col + 1; m < c; m++) if (!free(lanes[m], ca, cb)) clear = false;
+          if (clear) break;
+        }
+        p.col = c;
+        for (let m = par.col + 1; m < c; m++) mark(m, ca, cb, null);
+        mark(c, a, b, p.headH);
+      }
+      // 分岐の線が横切っただけの行は、見出しの高さを0にする
+      parts.laneHeadH = lanes.map((l) => (l && l.headH != null ? l.headH : 0));
+      return lanes.length;
+    };
+
     // 1つの図（独立した路線1本と、そこから分岐している路線すべて）を作る
     const buildGroup = (root) => {
       const parts = []; // 列ごとのHTML（1つめが root の列）
@@ -2651,17 +2695,23 @@
       };
       emit(root, 0, 0, null, false, "start", "");
 
-      const cols = parts.length;
+      // 分岐の列（横向きは行）を、重ならないものは同じ列に詰めて割り当てる（v1.58.0-beta。ユーザー指定）
+      const cols = packLanes(parts, connectors);
       const rootPart = parts[0];
       const cat = CATEGORIES[root.category];
-      const meta = `${(cat && cat.label) || ""} ／ ${routeStatusText(root)} ／ ${diagramLaneText(root)} ／ 全長 約${(rootTotal / 1000).toFixed(1)}km${cols > 1 ? ` ／ 分岐 ${cols - 1}路線` : ""}`;
+      const meta = `${(cat && cat.label) || ""} ／ ${routeStatusText(root)} ／ ${diagramLaneText(root)} ／ 全長 約${(rootTotal / 1000).toFixed(1)}km${parts.length > 1 ? ` ／ 分岐 ${parts.length - 1}路線` : ""}`;
 
       if (H) {
         // 横向き: 行（路線ごとの横の線）を、上から順に重ね、分岐の線（縦）でつなぐ
+        // 行（lane）ごとに、上から順に重ねる（同じ行に詰めた路線は、同じ高さ）
+        const laneTop = [];
         let y = 0;
+        for (let c = 0; c < cols; c++) {
+          laneTop[c] = y;
+          y += (parts.laneHeadH[c] || 0) + H_LINE + H_ROW_BODY + H_ROW_GAP;
+        }
         parts.forEach((p) => {
-          p.rowTop = y;
-          y += p.headH + H_LINE + H_ROW_BODY + H_ROW_GAP;
+          p.rowTop = laneTop[p.col];
         });
         const bodyH = y - H_ROW_GAP;
         const bodyW = Math.max(...parts.map((p) => p.top + p.height));
@@ -2697,20 +2747,20 @@
         .map((p, idx) =>
           idx === 0
             ? ""
-            : `<div class="diagram-track diagram-branch-col${p.chainIds.has(activeRouteId) ? " selected-route" : ""}" data-route-id="${escapeHtml(p.route.id)}" style="left:${idx * PITCH}px;top:${p.top}px;height:${p.height}px;${p.colorStyle}">${p.html}</div>`
+            : `<div class="diagram-track diagram-branch-col${p.chainIds.has(activeRouteId) ? " selected-route" : ""}" data-route-id="${escapeHtml(p.route.id)}" style="left:${p.col * PITCH}px;top:${p.top}px;height:${p.height}px;${p.colorStyle}">${p.html}</div>`
         )
         .join("");
       // 選択中の路線の背景（分岐の線・路線の線より下の層に置く）
       const hlHtml = parts
         .map((p, idx) =>
-          idx > 0 && p.chainIds.has(activeRouteId) ? `<div class="diagram-hl" style="left:${idx * PITCH - 72}px;top:${p.top - 8}px;width:464px;height:${p.height + 16}px;"></div>` : ""
+          idx > 0 && p.chainIds.has(activeRouteId) ? `<div class="diagram-hl" style="left:${p.col * PITCH - 72}px;top:${p.top - 8}px;width:464px;height:${p.height + 16}px;"></div>` : ""
         )
         .join("");
       // 同じ高さから出る横線は、長いものを先に描く（短いものが上に重なり、近い列へ分かれる線が見える）
       const connectorHtml = connectors
         .slice()
-        .sort((x, y) => y.to - y.from - (x.to - x.from))
-        .map((c) => diagramConnectorSvg(c, c.from * PITCH + 33, c.to * PITCH + 33, c.top, c.r, false))
+        .sort((x, y) => parts[y.to].col - parts[y.from].col - (parts[x.to].col - parts[x.from].col))
+        .map((c) => diagramConnectorSvg(c, parts[c.from].col * PITCH + 33, parts[c.to].col * PITCH + 33, c.top, c.r, false))
         .join("");
       const extraBottom = Math.max(0, bottom - rootPart.height);
       return { root, cols, rootPart, branchHtml, connectorHtml, hlHtml, extraBottom, meta };
@@ -2732,6 +2782,26 @@
     drawable.forEach((r) => {
       if (!visited.has(r.id)) buildOne(r);
     });
+
+    // 図（グループ）の並び順（v1.58.0-beta。ユーザー指定）: 図の並ぶ向きを、地図の向きに合わせる。
+    // 縦向きは、図が左右に並ぶので、西→東（経度の小さい順）。横向きは、上下に並ぶので、北→南（緯度の大きい順）。
+    // 位置は、図に含まれる全路線の点の平均。同じ位置なら、路線一覧の順のまま（sort は安定）
+    const centroidOf = (g) => {
+      let lat = 0;
+      let lng = 0;
+      let n = 0;
+      currentMap.routes.forEach((r) => {
+        if (!g.routeIds.has(r.id)) return;
+        r.points.forEach((pt) => {
+          lat += pt.lat;
+          lng += pt.lng;
+          n++;
+        });
+      });
+      return n ? { lat: lat / n, lng: lng / n } : { lat: 0, lng: 0 };
+    };
+    groups.forEach((g) => (g.centroid = centroidOf(g)));
+    groups.sort((a, b) => (H ? b.centroid.lat - a.centroid.lat : a.centroid.lng - b.centroid.lng));
 
     routeDiagramEl.style.removeProperty("max-width");
     routeDiagramEl.style.removeProperty("padding-bottom");
