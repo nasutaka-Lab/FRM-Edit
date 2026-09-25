@@ -1,8 +1,18 @@
 // リリースノート（画面の「リリースノート」に表示される、利用者向けの更新内容）。
 // 新しい版は配列の先頭に追加すること。CHANGELOG.md（開発者向け）と内容を揃える。
-window.APP_VERSION = "1.57.2-beta";
+window.APP_VERSION = "1.57.3-beta";
 
 window.RELEASE_NOTES = [
+  {
+    version: "1.57.3-beta",
+    date: "2026-09-25",
+    sections: [
+      {
+        title: "変更",
+        items: ["JSONファイルの読み込みを、「開く」メニューからできるようにしました（「保存」メニューにあった「インポート」を移しました）"],
+      },
+    ],
+  },
   {
     version: "1.57.2-beta",
     date: "2026-09-25",

@@ -39,6 +39,11 @@
         <div id="saved-maps-popover" class="popover" hidden>
           <div class="popover-title">保存済みマップ</div>
           <div id="saved-maps-list" class="list-box"></div>
+          <div class="popover-title">ファイル（JSON）から開く</div>
+          <label class="btn ghost full file-btn">
+            JSONファイルを読み込む
+            <input type="file" id="input-import" accept="application/json" hidden>
+          </label>
         </div>
       </div>
 
@@ -47,12 +52,8 @@
         <div id="save-popover" class="popover" hidden>
           <div class="popover-title">このブラウザに保存</div>
           <button id="btn-save-map" class="btn primary full" title="上の地図名称で保存します。「開く」から読み込めます">保存する</button>
-          <div class="popover-title">ファイル（JSON）</div>
+          <div class="popover-title">ファイル（JSON）に書き出す</div>
           <button id="btn-export" class="btn ghost full">エクスポート（書き出し）</button>
-          <label class="btn ghost full file-btn">
-            インポート（読み込み）
-            <input type="file" id="input-import" accept="application/json" hidden>
-          </label>
         </div>
       </div>
 
@@ -580,7 +581,7 @@
         </ul>
         <h4>ファイルで書き出す・読み込む</h4>
         <ul>
-          <li>「保存」メニューの「エクスポート」「インポート」から、JSONファイルとして書き出し／読み込みできます。他の人と共有したり、バックアップしたりするときに使います。</li>
+          <li>「保存」メニューの「エクスポート」でJSONファイルとして書き出し、「開く」メニューの「JSONファイルを読み込む」で読み込めます。他の人と共有したり、バックアップしたりするときに使います。</li>
         </ul>
 
         <h3 id="manual-h-keys">元に戻す・ショートカット</h3>
