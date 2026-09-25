@@ -278,7 +278,7 @@
                   </div>
                 </div>
                 <label class="export-check"><input id="export-transparent" type="checkbox"> 背景を透明にする（PNG・WebP）</label>
-                <button id="btn-diagram-export" type="button" class="btn primary full">画像を保存</button>
+                <button id="btn-diagram-export" type="button" class="btn primary full">プレビュー</button>
               </div>
             </div>
           </div>
@@ -348,6 +348,23 @@
     </div>
     <div class="modal-body">
       <div id="release-notes-list"></div>
+    </div>
+  </div>
+</div>
+
+<div id="export-preview-modal" class="modal-overlay" hidden>
+  <div class="modal modal-large" role="dialog" aria-modal="true" aria-labelledby="export-preview-title">
+    <div class="modal-header">
+      <h2 id="export-preview-title">画像のプレビュー</h2>
+      <button id="export-preview-close" class="icon-btn" title="閉じる">閉じる</button>
+    </div>
+    <div class="modal-body">
+      <p id="export-preview-info" class="export-preview-info"></p>
+      <div class="export-preview-frame"><img id="export-preview-img" alt="書き出す路線図のプレビュー"></div>
+      <div class="modal-actions">
+        <button id="export-preview-cancel" type="button" class="btn ghost">戻る</button>
+        <button id="export-preview-save" type="button" class="btn primary">この画像を保存</button>
+      </div>
     </div>
   </div>
 </div>
@@ -589,7 +606,7 @@
           <li><b>区間別の設定がある路線</b>：車線数が基本と違う区間は、線の太さが変わり、距離のあとに車線数（例: 5.3km・4車線）が付きます。状態が違う区間は、区間ごとに線の種類が変わります。</li>
         </ul>
         <h4>画像で保存</h4>
-        <p>図の右上の「画像で保存」から、路線図を画像ファイルに書き出せます。</p>
+        <p>図の右上の「画像で保存」から、路線図を画像ファイルに書き出せます。条件を選んで「プレビュー」を押すと、書き出す画像を確認する画面が開きます。よければ「この画像を保存」を押してください（気に入らなければ「戻る」で、条件を選び直せます）。</p>
         <table class="manual-def">
           <tbody>
             <tr><th>範囲</th><td>「すべての図」または「選択中の図だけ」を選びます。</td></tr>

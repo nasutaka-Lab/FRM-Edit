@@ -2272,21 +2272,61 @@
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, mime, 0.92));
       if (!blob) throw new Error("toBlob");
       const base = (mapNameInput.value || currentMap.name || "路線図").trim() || "路線図";
-      const a = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      a.href = url;
-      a.download = `${base}_路線図${scope === "selected" ? "_選択中" : ""}.${format === "jpeg" ? "jpg" : format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const filename = `${base}_路線図${scope === "selected" ? "_選択中" : ""}.${format === "jpeg" ? "jpg" : format}`;
       closeAllPopovers();
-      toast(shrunk ? "保存しました（図が大きいので、倍率を下げました）" : "画像を保存しました");
+      showExportPreview({ blob, filename, w: canvas.width, h: canvas.height, shrunk, format, transparent });
     } catch (err) {
       toast("画像を書き出せませんでした（ブラウザが対応していない可能性があります）", "error");
     }
   }
   document.getElementById("btn-diagram-export").addEventListener("click", exportDiagramImage);
+
+  // 書き出す前のプレビュー。ここで見て、「この画像を保存」を押したときだけ、ファイルにする
+  const exportPreviewEl = document.getElementById("export-preview-modal");
+  const exportPreviewImg = document.getElementById("export-preview-img");
+  let exportPreview = null; // { blob, filename, url }
+
+  function showExportPreview(p) {
+    closeExportPreview();
+    const url = URL.createObjectURL(p.blob);
+    exportPreview = { blob: p.blob, filename: p.filename, url };
+    exportPreviewImg.className = "fit";
+    exportPreviewImg.src = url;
+    const kb = p.blob.size >= 1048576 ? (p.blob.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(p.blob.size / 1024)) + " KB";
+    document.getElementById("export-preview-info").textContent =
+      `${p.filename}（${p.w} × ${p.h} px・${kb}）` +
+      (p.shrunk ? "。図が大きいので、倍率を下げました" : "") +
+      (p.transparent ? "。市松模様の部分は、透明です" : "");
+    exportPreviewEl.hidden = false;
+    document.getElementById("export-preview-save").focus();
+  }
+
+  function closeExportPreview() {
+    exportPreviewEl.hidden = true;
+    if (exportPreview) URL.revokeObjectURL(exportPreview.url);
+    exportPreview = null;
+    exportPreviewImg.removeAttribute("src");
+  }
+
+  document.getElementById("export-preview-save").addEventListener("click", () => {
+    if (!exportPreview) return;
+    const a = document.createElement("a");
+    a.href = exportPreview.url;
+    a.download = exportPreview.filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    closeExportPreview();
+    toast("画像を保存しました");
+  });
+  document.getElementById("export-preview-cancel").addEventListener("click", closeExportPreview);
+  document.getElementById("export-preview-close").addEventListener("click", closeExportPreview);
+  exportPreviewEl.addEventListener("click", (e) => {
+    if (e.target === exportPreviewEl) closeExportPreview();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !exportPreviewEl.hidden) closeExportPreview();
+  });
 
   // Ctrl（Macは Command）+ホイール、トラックパッドのピンチ: カーソルの位置を中心に拡大・縮小
   diagramAreaEl.addEventListener(

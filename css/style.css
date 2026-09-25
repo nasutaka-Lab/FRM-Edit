@@ -795,6 +795,18 @@ input[type="range"] { width: 100%; accent-color: var(--color-primary); }
 .diagram-export-popover { left: auto; right: 0; min-width: 260px; cursor: default; }
 .diagram-export-popover .field { margin-bottom: var(--space-2); }
 .export-check { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 2px 0 var(--space-2); color: var(--color-text); }
+.export-preview-info { margin: 0 0 var(--space-2); font-size: 13px; color: var(--color-text-muted); }
+/* 透明背景でも、書き出される範囲が分かるよう、市松の下地を敷く */
+.export-preview-frame {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: repeating-conic-gradient(#e8eaee 0% 25%, #fff 0% 50%) 0 0 / 16px 16px;
+}
+.export-preview-frame img { display: block; max-width: none; }
+.export-preview-frame img.fit { max-width: 100%; }
+#export-preview-modal .modal-actions { margin-top: var(--space-3); display: flex; justify-content: flex-end; gap: var(--space-2); }
 .export-check:has(input:disabled) { color: var(--color-text-muted); }
 
 /* ===== 横向き（始点が左・終点が右）。分岐する路線は、下の行に並ぶ ===== */
